@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Dark rounded-square background -->
+  <rect width="100" height="100" rx="22" ry="22" fill="#000a00"/>
+  <!-- Eye almond outline: two quadratic Bezier arcs sharing left (10,50) and right (90,50) tips -->
+  <path d="M 10 50 Q 50 12 90 50 Q 50 88 10 50 Z"
+        fill="none" stroke="white" stroke-width="5"
+        stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Iris ring -->
+  <circle cx="50" cy="50" r="16" fill="none" stroke="white" stroke-width="5"/>
+  <!-- Pupil -->
+  <circle cx="50" cy="50" r="7" fill="white"/>
+</svg>

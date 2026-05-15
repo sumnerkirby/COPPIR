@@ -1,0 +1,11 @@
+# Python packages required to BUILD the distributable packages.
+# Install these in addition to the app's own runtime dependencies.
+#
+#   pip install -r requirements_build.txt
+#
+# The app's runtime deps (fastapi, uvicorn, httpx, pywebview, pydantic)
+# must also be present in the same environment; PyInstaller bundles
+# whatever is installed alongside it.
+
+pyinstaller>=6.0
+Pillow>=10.0

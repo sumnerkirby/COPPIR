@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>COPPIR</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #loading-screen{position:fixed;inset:0;background:#000a00;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity 0.5s ease}
+    #loading-screen.fade-out{opacity:0;pointer-events:none}
+    .ls-brand{font-family:'Courier New',monospace;font-size:42px;font-weight:bold;color:#00ff41;letter-spacing:12px}
+    .ls-full{font-family:'Courier New',monospace;font-size:10px;color:#336633;letter-spacing:2px;text-transform:uppercase;text-align:center;line-height:1.9}
+    .ls-full-first{margin-top:12px}
+    .ls-bar-wrap{width:180px;height:2px;background:#001400;margin-top:28px;border-radius:1px;overflow:hidden}
+    .ls-bar{height:100%;width:30%;background:#00ff41;border-radius:1px;animation:ls-sweep 1.4s ease-in-out infinite}
+    @keyframes ls-sweep{0%{transform:translateX(-110%)}100%{transform:translateX(450%)}}
+    .ls-status{font-family:'Courier New',monospace;font-size:9px;color:#336633;letter-spacing:3px;margin-top:14px;text-transform:uppercase}
+  </style>
+</head>
+<body>
+
+<!-- ── LOADING SCREEN ─────────────────────────────────── -->
+<div id="loading-screen">
+  <div class="ls-brand">COPPIR</div>
+  <div class="ls-full ls-full-first">Common Operational Picture</div>
+  <div class="ls-full">Program for Incident Response</div>
+  <div class="ls-bar-wrap"><div class="ls-bar"></div></div>
+  <div class="ls-status">Initializing...</div>
+</div>
+
+<!-- ── SITREP STRIP ──────────────────────────────────── -->
+<div id="sitrep">
+
+  <!-- Row 1: metrics -->
+  <div id="sitrep-metrics">
+
+    <div id="sitrep-brand">
+    <span class="brand">COPPIR</span>
+    <div id="sitrep-clock">--:--:--</div>
+    <div id="ws-status" title="Connecting…" style="width:7px;height:7px;border-radius:50%;background:#FF4444;margin-top:3px;transition:background 0.3s"></div>
+  </div>
+    <div class="sitrep-divider"></div>
+
+    <div class="sitrep-section">
+      <div class="sitrep-section-hdr">Security Status</div>
+      <div class="sitrep-chips">
+        <div class="sitrep-chip chip-comp">
+          <div class="chip-count" id="cnt-comp">0</div>
+          <div class="chip-label">Compromised</div>
+        </div>
+        <div class="sitrep-chip chip-invs">
+          <div class="chip-count" id="cnt-invs">0</div>
+          <div class="chip-label">Under Investigation</div>
+        </div>
+        <div class="sitrep-chip chip-cont">
+          <div class="chip-count" id="cnt-cont">0</div>
+          <div class="chip-label">Contained</div>
+        </div>
+        <div class="sitrep-chip chip-mon">
+          <div class="chip-count" id="cnt-mon">0</div>
+          <div class="chip-label">Monitored</div>
+        </div>
+        <div class="sitrep-chip chip-cln">
+          <div class="chip-count" id="cnt-cln">0</div>
+          <div class="chip-label">Clean</div>
+        </div>
+        <div class="sitrep-chip chip-total">
+          <div class="chip-count" id="cnt-total">0</div>
+          <div class="chip-label">Total Assets</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sitrep-divider"></div>
+
+    <div class="sitrep-section">
+      <div class="sitrep-section-hdr">Operational Status</div>
+      <div class="sitrep-chips">
+        <div class="sitrep-chip chip-hlth">
+          <div class="chip-count" id="cnt-hlth">0</div>
+          <div class="chip-label">Healthy</div>
+        </div>
+        <div class="sitrep-chip chip-deg">
+          <div class="chip-count" id="cnt-deg">0</div>
+          <div class="chip-label">Degraded</div>
+        </div>
+        <div class="sitrep-chip chip-crit">
+          <div class="chip-count" id="cnt-crit">0</div>
+          <div class="chip-label">Critical</div>
+        </div>
+        <div class="sitrep-chip chip-off">
+          <div class="chip-count" id="cnt-off">0</div>
+          <div class="chip-label">Offline</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sitrep-divider"></div>
+
+    <!-- Sector integrity wheels -->
+    <div id="sitrep-wheels">
+      <div class="wheel-wrap" id="ww-medical">
+        <svg class="wheel-svg" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#33cc33" stroke-width="7"
+            stroke-dasharray="0 119.38" transform="rotate(-90 25 25)" class="arc"/>
+          <text x="25" y="30" text-anchor="middle" class="pct-text">--%</text>
+        </svg>
+        <div class="wheel-name">Medical</div>
+      </div>
+      <div class="wheel-wrap" id="ww-government">
+        <svg class="wheel-svg" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#33cc33" stroke-width="7"
+            stroke-dasharray="0 119.38" transform="rotate(-90 25 25)" class="arc"/>
+          <text x="25" y="30" text-anchor="middle" class="pct-text">--%</text>
+        </svg>
+        <div class="wheel-name">Government</div>
+      </div>
+      <div class="wheel-wrap" id="ww-power">
+        <svg class="wheel-svg" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#33cc33" stroke-width="7"
+            stroke-dasharray="0 119.38" transform="rotate(-90 25 25)" class="arc"/>
+          <text x="25" y="30" text-anchor="middle" class="pct-text">--%</text>
+        </svg>
+        <div class="wheel-name">Power</div>
+      </div>
+      <div class="wheel-wrap" id="ww-emergency">
+        <svg class="wheel-svg" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#33cc33" stroke-width="7"
+            stroke-dasharray="0 119.38" transform="rotate(-90 25 25)" class="arc"/>
+          <text x="25" y="30" text-anchor="middle" class="pct-text">--%</text>
+        </svg>
+        <div class="wheel-name">Emergency</div>
+      </div>
+      <div class="wheel-wrap" id="ww-civilian">
+        <svg class="wheel-svg" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#33cc33" stroke-width="7"
+            stroke-dasharray="0 119.38" transform="rotate(-90 25 25)" class="arc"/>
+          <text x="25" y="30" text-anchor="middle" class="pct-text">--%</text>
+        </svg>
+        <div class="wheel-name">Civilian</div>
+      </div>
+      <div class="wheel-wrap" id="ww-financial">
+        <svg class="wheel-svg" viewBox="0 0 50 50">
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
+          <circle cx="25" cy="25" r="19" fill="none" stroke="#33cc33" stroke-width="7"
+            stroke-dasharray="0 119.38" transform="rotate(-90 25 25)" class="arc"/>
+          <text x="25" y="30" text-anchor="middle" class="pct-text">--%</text>
+        </svg>
+        <div class="wheel-name">Financial</div>
+      </div>
+    </div>
+
+  </div><!-- /#sitrep-metrics -->
+
+  <!-- Row 2: toolbar -->
+  <div id="sitrep-toolbar">
+    <button class="btn btn-blue" onclick="openScenarioModal()" title="Ctrl+S">SCENARIO</button>
+    <button id="undo-btn" class="btn btn-dim" onclick="undoAction()" title="Ctrl+Z" disabled>&#8630; UNDO</button>
+    <button class="btn btn-dim"  onclick="toggleLog()"    title="Ctrl+L">LOG</button>
+    <button class="btn btn-dim"  onclick="togglePanel()"  title="Toggle side panel">&#9776; PANEL</button>
+    <button class="btn btn-dim"  onclick="openShortcuts()" title="Keyboard shortcuts (?)">?</button>
+    <div class="toolbar-sep"></div>
+    <button id="cluster-btn"  class="btn btn-dim" onclick="toggleClusters()"     title="Cluster dense pins at low zoom">CLUSTERS</button>
+    <button id="zones-btn"    class="btn btn-dim" onclick="toggleSectorZones()"  title="Show sector bounding zones">ZONES</button>
+    <button id="heatmap-btn"     class="btn btn-dim" onclick="toggleHeatmap()"    title="Security status heat map">SEC HEALTH</button>
+    <button id="ops-heatmap-btn" class="btn btn-dim" onclick="toggleOpsHeatmap()" title="Operational status heat map">OPS HEALTH</button>
+    <button class="btn btn-dim" onclick="openTimeline()"    title="View incident timeline">TIMELINE</button>
+    <button class="btn btn-dim" onclick="exportBriefing()"  title="Export SITREP briefing">EXPORT</button>
+    <div class="toolbar-sep"></div>
+    <button id="metrics-btn" class="btn btn-dim" onclick="toggleMetricsPanel()" title="Custom metrics tracker">METRICS ▾</button>
+    <button id="tools-btn" class="btn btn-dim" onclick="toggleRightPanel()" title="Toggle tools panel">TOOLS ▸</button>
+  </div><!-- /#sitrep-toolbar -->
+
+</div>
+
+<!-- ── METRICS DROPDOWN ──────────────────────────────── -->
+<div id="metrics-panel">
+  <div id="metrics-list"></div>
+  <div class="metrics-add-row">
+    <input id="met-name" class="inp" placeholder="Metric name..." style="flex:2;min-width:0"/>
+    <input id="met-val"  class="inp" type="number" min="0" max="100" value="100" placeholder="0–100" style="flex:1;min-width:0;max-width:70px"/>
+    <button class="btn" onclick="addMetric()">+ ADD</button>
+  </div>
+</div>
+
+<!-- ── MAP ───────────────────────────────────────────── -->
+<div id="map"></div>
+
+<!-- ── FLOATING PANEL ────────────────────────────────── -->
+<div id="panel">
+  <div class="panel-section">
+    <div class="section-hdr">LOCATION</div>
+    <div class="row">
+      <input id="loc-input" class="inp" placeholder="Search location..." onkeydown="if(e.key==='Enter')geoSearch()"/>
+      <button class="btn" onclick="geoSearch()">GO</button>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">IR INFRASTRUCTURE</div>
+    <select id="osm-cat" class="inp">
+      <optgroup label="── Medical ──────────">
+        <option>Hospitals</option>
+      </optgroup>
+      <optgroup label="── Government ───────">
+        <option>Government Buildings</option>
+      </optgroup>
+      <optgroup label="── Power ─────────────">
+        <option>Power Plants</option>
+      </optgroup>
+      <optgroup label="── Emergency ─────────">
+        <option>Fire Stations</option>
+        <option>Police Stations</option>
+      </optgroup>
+      <optgroup label="── Civilian Infra ────">
+        <option>Water Systems</option>
+        <option>Transportation Hubs</option>
+        <option>Telecom Infrastructure</option>
+        <option>Universities</option>
+      </optgroup>
+      <optgroup label="── Financial ─────────">
+        <option>Banks</option>
+      </optgroup>
+    </select>
+    <div class="row" style="margin-top:4px">
+      <input id="osm-radius" class="inp" style="width:60px" type="number" value="15" min="1" max="200"/>
+      <span class="dim-txt">mi radius</span>
+      <button id="query-btn" class="btn" style="margin-left:auto" onclick="osmSearch()">QUERY</button>
+    </div>
+    <div class="row" style="margin-top:5px;gap:4px">
+      <button id="set-origin-btn" class="btn btn-dim" style="flex:1;font-size:10px" onclick="setQueryOrigin()">PIN ORIGIN</button>
+    </div>
+    <div id="origin-info" class="row" style="display:none;margin-top:3px;gap:4px">
+      <i class="fa-solid fa-crosshairs" style="color:var(--fg-bright);font-size:10px"></i>
+      <span id="origin-coords" class="dim-txt" style="flex:1;font-size:10px"></span>
+      <button class="btn btn-danger" style="padding:1px 6px;font-size:9px" onclick="clearQueryOrigin()">CLEAR</button>
+    </div>
+    <div id="query-loading" class="loading-bar" style="display:none;margin-top:6px"></div>
+    <div id="search-status" class="dim-txt" style="margin-top:4px"></div>
+    <ul id="search-results"></ul>
+    <div id="pin-all-row" style="display:none;margin-top:4px">
+      <button class="btn btn-blue" onclick="pinAll()">PIN ALL RESULTS</button>
+      <button class="btn btn-dim" onclick="clearSearch()" style="margin-left:4px">CLEAR</button>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">BULK UPDATE</div>
+    <select id="bulk-cat" class="inp" onchange="refreshBulkPreview()">
+      <option value="">— All categories —</option>
+    </select>
+    <div id="bulk-preview" class="dim-txt" style="margin-top:5px">0 pins affected</div>
+    <button class="btn btn-danger" style="width:100%;margin-bottom:8px" onclick="clearAllPinsConfirm()">DELETE ALL PINS</button>
+    <div class="bulk-sub-hdr">SECURITY</div>
+    <div class="row" style="gap:4px;margin-top:3px">
+      <select id="bulk-status-sel" class="inp" style="flex:1">
+        <option>Clean</option>
+        <option>Monitored</option>
+        <option>Contained</option>
+        <option>Under Investigation</option>
+        <option>Compromised</option>
+      </select>
+      <button class="btn" style="white-space:nowrap" onclick="applyBulkStatus()">APPLY</button>
+    </div>
+    <div class="bulk-sub-hdr">OPERATIONAL</div>
+    <div class="row" style="gap:4px;margin-top:3px">
+      <select id="bulk-op-sel" class="inp" style="flex:1">
+        <option>Healthy</option>
+        <option>Degraded</option>
+        <option>Critical</option>
+        <option>Offline</option>
+      </select>
+      <button class="btn" style="white-space:nowrap" onclick="applyBulkOpStatus()">APPLY</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── RIGHT PANEL ────────────────────────────────────── -->
+<div id="right-panel">
+  <div class="right-panel-hdr">
+    <span>TOOLS</span>
+    <button class="btn btn-dim" style="padding:1px 8px;font-size:11px" onclick="toggleRightPanel()">✕</button>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">EXERCISE TIMER</div>
+    <div id="timer-display">00:00:00</div>
+    <div class="row" style="gap:5px;margin-top:8px">
+      <button id="timer-btn" class="btn btn-blue" style="flex:1" onclick="toggleTimer()">START</button>
+      <button class="btn btn-dim" style="flex:1" onclick="resetTimer()">RESET</button>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">LAYER VISIBILITY</div>
+    <div id="cat-toggles">
+      <div class="dim-txt" style="font-size:10px;padding:2px 0">No assets pinned yet.</div>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">MAP MARKUP</div>
+    <div style="margin-bottom:6px">
+      <button id="map-lock-btn" class="btn btn-dim" style="width:100%" onclick="toggleMapLock()" title="Lock map panning and scroll zoom">LOCK MAP</button>
+    </div>
+    <div class="markup-tools">
+      <button id="draw-line-btn"   class="btn btn-dim markup-btn" onclick="startDraw('polyline','draw-line-btn')"   title="Draw line — click points, double-click to finish">LINE</button>
+      <button id="draw-area-btn"   class="btn btn-dim markup-btn" onclick="startDraw('polygon','draw-area-btn')"    title="Draw polygon — click points, double-click to finish">AREA</button>
+      <button id="draw-rect-btn"   class="btn btn-dim markup-btn" onclick="startDraw('rectangle','draw-rect-btn')"  title="Draw rectangle — click and drag">RECT</button>
+      <button id="draw-circle-btn" class="btn btn-dim markup-btn" onclick="startDraw('circle','draw-circle-btn')"   title="Draw circle — click center, drag to set radius">CIRCLE</button>
+    </div>
+    <div class="markup-colors">
+      <span class="markup-swatch swatch-active" data-color="#FF3333" style="background:#FF3333" onclick="setMarkupColor('#FF3333')"></span>
+      <span class="markup-swatch" data-color="#FFAA00" style="background:#FFAA00" onclick="setMarkupColor('#FFAA00')"></span>
+      <span class="markup-swatch" data-color="#00FF41" style="background:#00FF41" onclick="setMarkupColor('#00FF41')"></span>
+      <span class="markup-swatch" data-color="#3399FF" style="background:#3399FF" onclick="setMarkupColor('#3399FF')"></span>
+      <span class="markup-swatch" data-color="#ffffff" style="background:#ffffff" onclick="setMarkupColor('#ffffff')"></span>
+      <input type="color" id="markup-color-picker" class="markup-color-inp" value="#FF3333" onchange="setMarkupColor(this.value)" title="Custom color"/>
+    </div>
+    <div style="display:flex;gap:4px;margin-top:6px">
+      <button id="measure-btn" class="btn btn-dim" style="flex:1" onclick="toggleMeasure()" title="Click points to measure distance · Double-click or Esc to finish">MEASURE</button>
+      <button class="btn btn-dim" style="flex:1" onclick="clearAllMarkup()">CLEAR ALL</button>
+    </div>
+    <div id="measure-result" class="dim-txt" style="margin-top:5px;font-size:10px;text-align:center;min-height:14px;letter-spacing:0.5px"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">FIND ASSET</div>
+    <div class="row">
+      <input id="pin-filter-inp" class="inp" placeholder="Filter by name or category..." oninput="filterPins(this.value)"/>
+      <button class="btn btn-dim" style="padding:4px 8px" onclick="clearFilter()">&#10005;</button>
+    </div>
+    <div id="filter-status" class="dim-txt" style="margin-top:4px;font-size:10px"></div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">QUICK ADD</div>
+    <div class="dim-txt">Right-click the map to place a pin</div>
+    <div class="dim-txt" style="margin-top:4px">Ctrl+S Save &nbsp;·&nbsp; Ctrl+L Log &nbsp;·&nbsp; Esc Close</div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr">ALERT THRESHOLDS</div>
+    <ul id="threshold-list"></ul>
+    <div class="row" style="gap:4px;margin-top:6px">
+      <input id="thr-name" class="inp" placeholder="Rule name..." style="flex:1;min-width:0"/>
+    </div>
+    <div class="row" style="gap:4px;margin-top:4px">
+      <select id="thr-sector" class="inp" style="flex:1">
+        <option value="all">All sectors</option>
+        <option value="medical">Medical</option>
+        <option value="government">Government</option>
+        <option value="power">Power</option>
+        <option value="emergency">Emergency</option>
+        <option value="civilian">Civilian</option>
+        <option value="financial">Financial</option>
+      </select>
+      <input id="thr-pct" class="inp" type="number" value="50" min="0" max="100" style="width:52px" title="Alert when score drops below this %"/>
+      <span class="dim-txt">%</span>
+    </div>
+    <div class="row" style="gap:4px;margin-top:4px">
+      <select id="thr-sev" class="inp" style="flex:1">
+        <option value="info">Info</option>
+        <option value="warning" selected>Warning</option>
+        <option value="critical">Critical</option>
+      </select>
+      <button class="btn" onclick="addThreshold()">+ ADD</button>
+    </div>
+  </div>
+
+  <div class="panel-section">
+    <div class="section-hdr" style="display:flex;justify-content:space-between;align-items:center">
+      INJECT QUEUE
+      <button class="btn btn-blue" style="padding:2px 7px;font-size:10px" onclick="openInjectModal()">+ NEW</button>
+    </div>
+    <ul id="inject-list"></ul>
+  </div>
+</div>
+
+<!-- ── RIGHT-CLICK CONTEXT MENU ──────────────────────── -->
+<div id="ctx-menu">
+  <div class="ctx-item" onclick="ctxAdd('Asset')">+ Add Asset</div>
+  <div class="ctx-item ctx-sep" onclick="ctxAdd('POI')">+ Add POI</div>
+  <div class="ctx-item ctx-danger" onclick="hideCtx()">Cancel</div>
+</div>
+
+<!-- ── TOAST ─────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<!-- ── MODAL: PIN EDIT ───────────────────────────────── -->
+<div id="pin-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-hdr">EDIT PIN</div>
+    <input id="em-pid" type="hidden"/>
+    <label class="lbl">Name</label>
+    <input id="em-name" class="inp" type="text"/>
+    <label class="lbl">Category</label>
+    <input id="em-cat" class="inp" type="text" readonly/>
+    <label class="lbl">Security Status</label>
+    <select id="em-status" class="inp">
+      <option>Clean</option>
+      <option>Monitored</option>
+      <option>Contained</option>
+      <option>Under Investigation</option>
+      <option>Compromised</option>
+    </select>
+    <label class="lbl">Operational Status</label>
+    <select id="em-op-status" class="inp">
+      <option>Healthy</option>
+      <option>Degraded</option>
+      <option>Critical</option>
+      <option>Offline</option>
+    </select>
+    <label class="lbl">Pin Color <span class="dim-txt">(leave blank = status color)</span></label>
+    <div class="row color-row">
+      <input id="em-color" class="inp" type="color" style="width:40px;height:30px;padding:2px"/>
+      <div class="color-presets">
+        <span class="swatch" style="background:#33CC33" onclick="setColor('#33CC33')"></span>
+        <span class="swatch" style="background:#FF3333" onclick="setColor('#FF3333')"></span>
+        <span class="swatch" style="background:#FFAA00" onclick="setColor('#FFAA00')"></span>
+        <span class="swatch" style="background:#3399FF" onclick="setColor('#3399FF')"></span>
+        <span class="swatch" style="background:#FF6600" onclick="setColor('#FF6600')"></span>
+        <span class="swatch" style="background:#ffffff" onclick="setColor('')">✕</span>
+      </div>
+    </div>
+    <label class="lbl">Notes</label>
+    <textarea id="em-notes" class="inp" rows="3"></textarea>
+    <label class="lbl">Network Links</label>
+    <div id="em-links"></div>
+    <div class="row" style="gap:4px;margin-top:4px">
+      <select id="em-link-target" class="inp" style="flex:1;font-size:10px"></select>
+      <button class="btn btn-dim" style="padding:4px 8px;font-size:10px" onclick="addPinLink()">LINK</button>
+    </div>
+    <label class="lbl" style="margin-top:8px">Status History</label>
+    <div id="em-history" class="status-history"></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="deletePinDialog()">DELETE</button>
+      <button class="btn btn-dim" onclick="closeModal('pin-modal')">CANCEL</button>
+      <button class="btn" onclick="savePinEdit()">SAVE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: BULK PIN ───────────────────────────────── -->
+<div id="bulk-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-hdr">BULK PIN</div>
+    <div class="dim-txt" id="bulk-count"></div>
+    <label class="lbl">Security Status</label>
+    <select id="bm-status" class="inp">
+      <option>Clean</option>
+      <option>Monitored</option>
+      <option>Contained</option>
+      <option>Under Investigation</option>
+      <option>Compromised</option>
+    </select>
+    <label class="lbl">Operational Status</label>
+    <select id="bm-op-status" class="inp">
+      <option>Healthy</option>
+      <option>Degraded</option>
+      <option>Critical</option>
+      <option>Offline</option>
+    </select>
+    <label class="lbl">Pin Color <span class="dim-txt">(blank = status color)</span></label>
+    <div class="row color-row">
+      <input id="bm-color" class="inp" type="color" style="width:40px;height:30px;padding:2px"/>
+      <div class="color-presets">
+        <span class="swatch" style="background:#33CC33" onclick="setBulkColor('#33CC33')"></span>
+        <span class="swatch" style="background:#FF3333" onclick="setBulkColor('#FF3333')"></span>
+        <span class="swatch" style="background:#FFAA00" onclick="setBulkColor('#FFAA00')"></span>
+        <span class="swatch" style="background:#3399FF" onclick="setBulkColor('#3399FF')"></span>
+        <span class="swatch" style="background:#FF6600" onclick="setBulkColor('#FF6600')"></span>
+        <span class="swatch" style="background:#ffffff" onclick="setBulkColor('')">✕</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-dim" onclick="resolveBulk(false)">CANCEL</button>
+      <button class="btn btn-blue" onclick="resolveBulk(true)">PIN ALL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: NAME PROMPT ────────────────────────────── -->
+<div id="name-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-hdr" id="nm-hdr">ADD PIN</div>
+    <label class="lbl">Name</label>
+    <input id="nm-name" class="inp" type="text" placeholder="Enter name..."/>
+    <label class="lbl">Security Status</label>
+    <select id="nm-status" class="inp">
+      <option>Clean</option>
+      <option>Monitored</option>
+      <option>Contained</option>
+      <option>Under Investigation</option>
+      <option>Compromised</option>
+    </select>
+    <label class="lbl">Operational Status</label>
+    <select id="nm-op-status" class="inp">
+      <option>Healthy</option>
+      <option>Degraded</option>
+      <option>Critical</option>
+      <option>Offline</option>
+    </select>
+    <div class="modal-footer">
+      <button class="btn btn-dim" onclick="resolveNameModal(false)">CANCEL</button>
+      <button class="btn" onclick="resolveNameModal(true)">ADD</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── DECISION LOG PANEL ─────────────────────────────── -->
+<div id="log-panel">
+  <div id="log-hdr" onclick="toggleLog()">
+    <span>DECISION LOG</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="log-count" class="dim-txt">0 entries</span>
+      <button class="btn btn-dim" style="padding:1px 7px;font-size:10px"
+        onclick="event.stopPropagation();exportLog()">EXPORT</button>
+      <span id="log-chevron">▲</span>
+    </div>
+  </div>
+  <div id="log-body">
+    <div id="log-entries"></div>
+    <div id="log-add-row">
+      <select id="log-pin-sel" class="inp" style="flex:1;font-size:11px"></select>
+      <input id="log-action-inp" class="inp" placeholder="Action taken..." style="flex:2;font-size:11px"/>
+      <button class="btn" style="white-space:nowrap" onclick="addLogEntry()">LOG</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── INJECT ALERT OVERLAY ───────────────────────────── -->
+<div id="inject-alert" style="display:none">
+  <div id="inject-alert-box">
+    <div id="inject-alert-bar"></div>
+    <div id="inject-alert-body">
+      <div class="inject-alert-eyebrow">INCOMING INJECT</div>
+      <div id="inject-alert-title"></div>
+      <div id="inject-alert-desc"></div>
+      <div id="inject-alert-footer">
+        <span id="inject-alert-timer" class="dim-txt"></span>
+        <button class="btn" onclick="dismissInjectAlert()">ACKNOWLEDGE</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: SCENARIO MANAGER ────────────────────────── -->
+<div id="scenario-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-hdr">SCENARIO MANAGER</div>
+
+    <div class="section-hdr">SAVE CURRENT SESSION</div>
+    <div class="row" style="margin-top:6px;gap:6px">
+      <input id="scenario-name-inp" class="inp" placeholder="Scenario name..." style="flex:1"/>
+      <button class="btn" onclick="saveScenario()">SAVE</button>
+    </div>
+
+    <div class="section-hdr" style="margin-top:14px">LOAD SCENARIO</div>
+    <ul id="scenario-list" style="list-style:none;margin-top:6px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:3px"></ul>
+    <div id="scenario-empty" class="dim-txt" style="display:none;padding:8px">No saved scenarios yet.</div>
+
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger" onclick="confirmClear()">NEW SESSION</button>
+      <button class="btn btn-dim" onclick="closeModal('scenario-modal')">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: CREATE INJECT ───────────────────────────── -->
+<div id="create-inject-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box">
+    <div class="modal-hdr">CREATE INJECT</div>
+    <label class="lbl">Title</label>
+    <input id="inj-title" class="inp" placeholder="e.g. SCADA Anomaly Detected"/>
+    <label class="lbl">Description (shown to all players)</label>
+    <textarea id="inj-desc" class="inp" rows="3" placeholder="Describe the event players will receive..."></textarea>
+    <label class="lbl">Severity</label>
+    <select id="inj-sev" class="inp">
+      <option value="info">Info</option>
+      <option value="warning" selected>Warning</option>
+      <option value="critical">Critical</option>
+    </select>
+    <label class="lbl">Target Asset <span class="dim-txt">(optional — force a status change on trigger)</span></label>
+    <select id="inj-target-pin" class="inp">
+      <option value="">— None —</option>
+    </select>
+    <label class="lbl">New Status for Target</label>
+    <select id="inj-target-status" class="inp">
+      <option value="">— Unchanged —</option>
+      <option>Clean</option>
+      <option>Monitored</option>
+      <option>Contained</option>
+      <option>Under Investigation</option>
+      <option>Compromised</option>
+    </select>
+    <div class="modal-footer">
+      <button class="btn btn-dim" onclick="closeModal('create-inject-modal')">CANCEL</button>
+      <button class="btn btn-blue" onclick="saveInject()">QUEUE INJECT</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: TIMELINE ─────────────────────────────────── -->
+<div id="timeline-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box timeline-box">
+    <div class="modal-hdr" style="display:flex;justify-content:space-between;align-items:center">
+      INCIDENT TIMELINE
+      <button class="btn btn-dim" style="padding:2px 8px;font-size:10px" onclick="closeModal('timeline-modal')">&#10005;</button>
+    </div>
+    <div class="dim-txt" style="font-size:10px;margin-bottom:8px">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00ff41;margin-right:4px;vertical-align:middle"></span>Manual
+      &nbsp;
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#FFAA00;margin-right:4px;vertical-align:middle"></span>Auto / Inject
+    </div>
+    <div id="timeline-scroll">
+      <div id="timeline-track"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL: KEYBOARD SHORTCUTS ──────────────────────── -->
+<div id="shortcuts-modal" class="modal-overlay" style="display:none">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-hdr">KEYBOARD SHORTCUTS</div>
+    <table class="shortcut-table">
+      <tr><td class="sc-key">Ctrl+S</td><td>Save scenario</td></tr>
+      <tr><td class="sc-key">Ctrl+L</td><td>Toggle decision log</td></tr>
+      <tr><td class="sc-key">Ctrl+Z</td><td>Undo last action</td></tr>
+      <tr><td class="sc-key">?</td><td>Show this help</td></tr>
+      <tr><td class="sc-key">Esc</td><td>Close modals</td></tr>
+      <tr><td class="sc-key">Enter</td><td>Submit location search / confirm name</td></tr>
+      <tr><td class="sc-key">Right-click map</td><td>Place a new pin</td></tr>
+      <tr><td class="sc-key">Click pin</td><td>Edit status, notes, color</td></tr>
+      <tr><td class="sc-key">Click edge line</td><td>Delete topology connection</td></tr>
+    </table>
+    <div class="modal-footer">
+      <button class="btn btn-dim" onclick="closeModal('shortcuts-modal')">CLOSE</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
