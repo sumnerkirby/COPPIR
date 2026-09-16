@@ -1,0 +1,4 @@
+# Test dependencies. The runtime requirements in requirements.txt are also
+# needed; httpx is already there and is what TestClient runs on.
+-r requirements.txt
+pytest>=8.0
