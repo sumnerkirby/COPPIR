@@ -15,6 +15,14 @@ env/
 # The demo scenario is reproducible via examples/seed_demo.py instead.
 scenarios/
 
+# Generated icons. make_icons.py produces icon.png, icon.ico and icon.iconset/;
+# build_mac.sh turns the iconset into icon.icns. All three build scripts run
+# make_icons.py, so none of these need to be tracked. icon.svg is the source.
+packaging/icon.png
+packaging/icon.ico
+packaging/icon.icns
+packaging/icon.iconset/
+
 # PyInstaller build artifacts
 packaging/dist/
 packaging/build_tmp/
