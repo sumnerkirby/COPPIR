@@ -44,6 +44,21 @@ python run.py
 
 The app opens a dark-themed desktop window. A loading screen displays briefly while the internal server starts, then the map loads automatically.
 
+### Loading the demo scenario
+
+To see the interface populated rather than empty, run the seed script against a
+running instance:
+
+```bash
+python examples/seed_demo.py
+```
+
+It builds a fictional multi-sector incident in Washington DC — 53 assets, asset
+dependencies, fired and queued injects, alert thresholds, and a decision log —
+and saves it as a scenario named **DC Grid Incident Demo**, which can be
+reloaded later from the scenario modal (Ctrl+S). Running it replaces all
+current state.
+
 ---
 
 ## The Map
