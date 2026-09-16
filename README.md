@@ -2,7 +2,9 @@
 
 **Common Operational Picture Program for Incident Response**
 
-COPPIR is a local desktop application for building and managing a live common operational picture during incident response training exercises. It runs entirely on a single machine with no internet account or cloud dependency required.
+COPPIR is a local desktop application for building and managing a live common operational picture during incident response training exercises. It runs on a single machine with no account or cloud service behind it.
+
+![COPPIR running a demo incident scenario in Washington DC](docs/screenshot.png)
 
 ---
 
@@ -32,7 +34,7 @@ COPPIR is a local desktop application for building and managing a live common op
 ### Running from source
 
 ```bash
-pip install fastapi uvicorn httpx pydantic pywebview
+pip install -r requirements.txt
 python run.py
 ```
 
@@ -53,11 +55,11 @@ running instance:
 python examples/seed_demo.py
 ```
 
-It builds a fictional multi-sector incident in Washington DC — 53 assets, asset
-dependencies, fired and queued injects, alert thresholds, and a decision log —
-and saves it as a scenario named **DC Grid Incident Demo**, which can be
-reloaded later from the scenario modal (Ctrl+S). Running it replaces all
-current state.
+This builds the scenario pictured above: a fictional incident in Washington DC
+with 53 assets, dependencies between them, fired and queued injects, alert
+thresholds, and a decision log. It saves as a scenario named **DC Grid Incident
+Demo**, so you can reload it later from the scenario modal (Ctrl+S). Note that
+running it replaces whatever is currently loaded.
 
 ---
 
