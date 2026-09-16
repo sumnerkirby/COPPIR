@@ -1076,7 +1076,10 @@ function renderInjectItem(inj) {
 
 async function triggerInject(iid) {
   const r = await fetch(`/api/injects/${iid}/trigger`, { method: 'POST' });
-  if (!r.ok) showToast('Failed to fire inject');
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({}));
+    showToast(err.detail || 'Failed to fire inject');
+  }
 }
 
 async function deleteInject(iid) {
