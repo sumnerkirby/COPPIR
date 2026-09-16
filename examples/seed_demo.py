@@ -1,24 +1,20 @@
-"""Seed COPPIR with a demo incident scenario.
+"""Seed a running COPPIR instance with a demo incident scenario.
 
-Populates a running COPPIR instance with a fictional multi-sector incident in
-Washington DC: a SCADA compromise at a power substation that cascades through a
-fiber cut into transit signalling, with the surrounding medical, government,
-emergency, civilian, and financial assets at varying states of health.
+Builds a fictional incident in Washington DC: a SCADA compromise at a power
+substation that cascades through a fiber cut into transit signalling, with the
+surrounding assets at varying states of health. Used for the README screenshot,
+and handy for poking at the interface without waiting on live Overpass queries.
 
-Used to generate the screenshots in the README, and useful for exercising the
-interface without waiting on live Overpass queries. Asset names and coordinates
-come from OpenStreetMap; the statuses, dependencies, injects, and log entries
-are invented for the scenario.
+Asset names and coordinates are real OpenStreetMap data. Everything else --
+statuses, dependencies, injects, log entries -- is made up. Statuses are picked
+so each sector wheel lands somewhere different, which puts the whole green-to-red
+range in one screenshot.
 
-Statuses are chosen so every sector wheel lands at a different integrity level,
-which makes the full green-to-red range visible in one screenshot.
+    python run.py                     # one shell
+    python examples/seed_demo.py      # another
 
-Usage:
-    python run.py                     # in one shell, or start uvicorn directly
-    python examples/seed_demo.py      # in another
-
-This REPLACES all current state in the running instance. The result is saved as
-a scenario named "DC Grid Incident Demo", loadable later from the UI.
+This clears whatever is currently loaded. The result is saved as a scenario
+named "DC Grid Incident Demo".
 """
 import os
 import sys

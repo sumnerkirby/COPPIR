@@ -127,14 +127,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function initMap() {
   map = L.map('map', { zoomControl: true }).setView([39.5, -98.35], 5);
 
-  // Esri's Dark Gray Canvas is split into a base layer and a separate labels
-  // overlay; both are added here so place names sit above the terrain. Esri
-  // orders its tile path {z}/{y}/{x}, not the {z}/{x}/{y} most providers use.
-  //
-  // The cache only goes to zoom 16 — beyond that Esri returns a light grey
-  // "Map data not yet available" tile, which would break the dark theme at
-  // street level. maxNativeZoom stops requests at 16 and lets Leaflet upscale
-  // those tiles through zoom 19, so the map stays usable and on-theme.
+  // Esri splits this basemap into terrain and labels, so both go on. Note the
+  // tile path is {z}/{y}/{x}, not the usual {z}/{x}/{y}.
+  // Only cached to z16; past that Esri serves a light "no data" tile that
+  // wrecks the dark theme, so cap requests there and let Leaflet upscale.
   const ESRI_CANVAS = 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas';
   const esriOpts = { maxNativeZoom: 16, maxZoom: 19 };
 
