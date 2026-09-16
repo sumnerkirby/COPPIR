@@ -308,3 +308,9 @@ Scenario files are stored as JSON in a `scenarios/` folder next to the applicati
 ## Connection Status
 
 A small dot in the top-left corner next to the clock shows the WebSocket connection status. Green means the interface is live and receiving updates. Red means the connection was lost and the app is attempting to reconnect automatically. No data is lost during a brief disconnect; the server holds state and sends a full sync when the connection is restored.
+
+---
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
