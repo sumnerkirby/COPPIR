@@ -122,3 +122,53 @@ class TestTrigger:
         """A target deleted before the inject fires must not blow up the trigger."""
         i = inject(target_pid="deleted-pin", target_status="Compromised")
         assert client.post(f"/api/injects/{i['id']}/trigger").status_code == 200
+
+
+class TestCannotBeTriggeredTwice:
+    """The README says an inject cannot be fired again once triggered.
+
+    The API used to allow it, and each repeat spawned another copy of new_pin
+    and wrote another log entry. The UI hides the button after firing, so this
+    needed a second window or a double-click to hit -- both plausible mid
+    exercise.
+    """
+
+    def test_second_trigger_is_rejected(self, client, inject):
+        i = inject()
+        assert client.post(f"/api/injects/{i['id']}/trigger").status_code == 200
+        assert client.post(f"/api/injects/{i['id']}/trigger").status_code == 409
+
+    def test_rejected_retry_does_not_spawn_another_pin(self, client, inject):
+        i = inject(new_pin={"name": "Relocated CP", "lat": 1.0, "lon": 1.0})
+        client.post(f"/api/injects/{i['id']}/trigger")
+        for _ in range(3):
+            client.post(f"/api/injects/{i['id']}/trigger")
+        assert len(client.get("/api/pins").json()) == 1
+
+    def test_rejected_retry_does_not_write_another_log_entry(self, client, inject):
+        i = inject()
+        client.post(f"/api/injects/{i['id']}/trigger")
+        client.post(f"/api/injects/{i['id']}/trigger")
+        assert len(client.get("/api/log").json()) == 1
+
+    def test_rejected_retry_does_not_move_the_target_again(self, client, make_pin, inject):
+        pin = make_pin(status="Clean")
+        i = inject(target_pid=pin["id"], target_status="Compromised")
+        client.post(f"/api/injects/{i['id']}/trigger")
+        client.put(f"/api/pins/{pin['id']}", json={"status": "Contained"})
+
+        client.post(f"/api/injects/{i['id']}/trigger")
+        assert client.get("/api/pins").json()[pin["id"]]["status"] == "Contained"
+
+    def test_original_timestamp_survives_the_retry(self, client, inject):
+        i = inject()
+        fired = client.post(f"/api/injects/{i['id']}/trigger").json()["triggered_at"]
+        client.post(f"/api/injects/{i['id']}/trigger")
+        listed = client.get("/api/injects").json()[0]
+        assert listed["triggered_at"] == fired
+
+    def test_the_rejection_says_why(self, client, inject):
+        i = inject()
+        client.post(f"/api/injects/{i['id']}/trigger")
+        r = client.post(f"/api/injects/{i['id']}/trigger")
+        assert "already been triggered" in r.json()["detail"]

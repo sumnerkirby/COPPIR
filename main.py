@@ -466,6 +466,11 @@ async def trigger_inject(iid: str):
     if iid not in injects:
         raise HTTPException(404)
     inj = injects[iid]
+    if inj.get("triggered_at"):
+        # Firing twice would spawn a second copy of new_pin and write a second
+        # log entry. The UI hides the button once fired, but a second window or
+        # a double-click can still reach this.
+        raise HTTPException(409, "Inject has already been triggered")
     now = datetime.now().isoformat()
     inj["triggered_at"] = now
 
