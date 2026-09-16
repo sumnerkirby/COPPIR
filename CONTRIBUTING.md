@@ -34,5 +34,17 @@ the body when a change isn't self-explanatory; skip the body when it is.
 One logical change per PR. Say what changed, why, and how you checked it.
 Squash on merge.
 
-There is no test suite yet, so until there is, note in the PR how the change
-was exercised by hand.
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+The suite drives the API through FastAPI's `TestClient`, so it needs no running
+server and makes no network calls. All state lives in module-level dicts in
+`main.py`, so `tests/conftest.py` clears them between tests and redirects
+scenario writes to a temp directory.
+
+Coverage is partial. If you touch something it does not reach yet, say in the
+PR how you checked it by hand.

@@ -11,6 +11,9 @@ build/
 venv/
 env/
 
+# pytest
+.pytest_cache/
+
 # Runtime output — scenarios are saved by the app at runtime.
 # The demo scenario is reproducible via examples/seed_demo.py instead.
 scenarios/
