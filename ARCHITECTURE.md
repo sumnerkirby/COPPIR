@@ -167,13 +167,14 @@ All request bodies are Pydantic v2 models. String fields have `min_length` / `ma
 
 ## Frontend (`static/`)
 
-**Runtime:** plain ES2020 JavaScript, no build step or bundler.
+**Runtime:** plain ES2020 JavaScript, no build step or bundler. Third-party libraries are vendored under `static/vendor/`, so the frontend loads with no network access and a PyInstaller build is self-contained.
 
 | File | Role |
 |---|---|
 | `index.html` | Shell: loading screen, SITREP strip, toolbar, map container, all modals |
 | `app.js` | All application logic (~1900 lines) |
 | `style.css` | All styles — terminal green-on-black theme |
+| `vendor/` | Leaflet, its markercluster/heat/draw plugins, and Font Awesome Solid, committed rather than fetched from a CDN. See `static/vendor/README.md` for versions and licenses. |
 
 ### Map
 
