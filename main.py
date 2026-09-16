@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Dict, List
 from contextlib import asynccontextmanager
-import sys, json, uuid, httpx, uvicorn, threading, time, re
+import sys, json, uuid, httpx, re
 
 # Allowlists for enum-style fields. Validated at the Pydantic layer so invalid
 # values are rejected before touching in-memory state or being broadcast to clients.
@@ -660,30 +660,3 @@ async def delete_threshold(tid: str):
 
 # mount static LAST so API routes take priority
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
-
-if __name__ == "__main__":
-    import webview
-
-    def _serve():
-        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
-
-    t = threading.Thread(target=_serve, daemon=True)
-    t.start()
-
-    # wait for server to accept connections
-    import socket
-    for _ in range(20):
-        try:
-            socket.create_connection(("127.0.0.1", 8000), timeout=0.5).close()
-            break
-        except OSError:
-            time.sleep(0.25)
-
-    window = webview.create_window(
-        "COPPIR",
-        "http://127.0.0.1:8000",
-        width=1400,
-        height=900,
-        min_size=(800, 600),
-    )
-    webview.start()
