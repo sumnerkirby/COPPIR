@@ -163,3 +163,55 @@ class TestBulkStatus:
         client.post("/api/pins/bulk-status", json={"category": "Banks", "status": "Compromised"})
         history = client.get("/api/pins").json()[pin["id"]]["status_history"]
         assert [h["status"] for h in history] == ["Clean", "Compromised"]
+
+
+class TestBlankNames:
+    """A pin with no readable label cannot be identified or filtered for.
+
+    POST enforced min_length on name, but that let "   " through, and category
+    had no minimum on any model. PUT had neither, so a pin created with a valid
+    name could be blanked afterwards.
+    """
+
+    @pytest.mark.parametrize("value", ["", "   ", "\t", "\n  "])
+    def test_create_rejects_a_blank_name(self, client, value):
+        r = client.post("/api/pins", json={"name": value, "lat": 1.0, "lon": 1.0})
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_create_rejects_a_blank_category(self, client, value):
+        r = client.post("/api/pins",
+                        json={"name": "ok", "category": value, "lat": 1.0, "lon": 1.0})
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("field", ["name", "category"])
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_update_cannot_blank_a_field(self, client, make_pin, field, value):
+        pin = make_pin(name="Rosslyn Substation", category="Power Plants")
+        r = client.put(f"/api/pins/{pin['id']}", json={field: value})
+        assert r.status_code == 422
+        assert client.get("/api/pins").json()[pin["id"]][field] == pin[field]
+
+    def test_surrounding_whitespace_is_trimmed(self, client):
+        pin = client.post("/api/pins", json={
+            "name": "  Rosslyn Substation  ", "category": " Power Plants ",
+            "lat": 1.0, "lon": 1.0}).json()
+        assert pin["name"] == "Rosslyn Substation"
+        assert pin["category"] == "Power Plants"
+
+    def test_bulk_create_rejects_a_blank_name(self, client):
+        r = client.post("/api/pins/bulk", json={"items": [
+            {"name": "fine", "lat": 1.0, "lon": 1.0},
+            {"name": "  ", "lat": 2.0, "lon": 2.0},
+        ]})
+        assert r.status_code == 422
+        assert client.get("/api/pins").json() == {}
+
+    def test_inject_spawned_pin_rejects_a_blank_name(self, client):
+        r = client.post("/api/injects", json={
+            "title": "t", "description": "d",
+            "new_pin": {"name": "   ", "lat": 1.0, "lon": 1.0}})
+        assert r.status_code == 422
+
+    def test_a_real_name_still_works(self, client, make_pin):
+        assert make_pin(name="Rosslyn Substation")["name"] == "Rosslyn Substation"

@@ -15,6 +15,20 @@ _VALID_SEVERITY  = {"info", "warning", "critical"}
 _VALID_SECTOR    = {"all", "medical", "government", "power", "emergency", "civilian", "financial"}
 _HEX_RE          = re.compile(r'^#[0-9a-fA-F]{6}$')
 
+
+def _non_blank(v):
+    """Trim a name-ish field and reject it if nothing is left.
+
+    min_length alone lets "   " through, which puts a pin on the map with no
+    readable label and no way to find it by filtering.
+    """
+    if v is None:
+        return v
+    v = v.strip()
+    if not v:
+        raise ValueError("must not be blank")
+    return v
+
 # Cap returned OSM results to prevent the browser map from freezing when
 # querying a dense urban area (e.g. ATMs or telecom masts in a city center).
 OSM_RESULT_CAP = 200
@@ -70,6 +84,11 @@ async def broadcast(msg: dict):
 class PinIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     category: str = Field("Asset", max_length=100)
+
+    @field_validator("name", "category")
+    @classmethod
+    def val_non_blank(cls, v):
+        return _non_blank(v)
     lat: float = Field(..., ge=-90, le=90)
     lon: float = Field(..., ge=-180, le=180)
     status: str = "Clean"
@@ -98,6 +117,11 @@ class PinIn(BaseModel):
 class PinUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     category: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("name", "category")
+    @classmethod
+    def val_non_blank(cls, v):
+        return _non_blank(v)
     status: Optional[str] = None
     op_status: Optional[str] = None
     pin_color: Optional[str] = None
@@ -127,6 +151,11 @@ class GeoReq(BaseModel):
 class NewPinData(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     category: str = Field("Asset", max_length=100)
+
+    @field_validator("name", "category")
+    @classmethod
+    def val_non_blank(cls, v):
+        return _non_blank(v)
     lat: float = Field(..., ge=-90, le=90)
     lon: float = Field(..., ge=-180, le=180)
     status: str = "Under Investigation"
@@ -186,6 +215,11 @@ class BulkStatusReq(BaseModel):
 class BulkPinItem(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     category: str = Field("Asset", max_length=100)
+
+    @field_validator("name", "category")
+    @classmethod
+    def val_non_blank(cls, v):
+        return _non_blank(v)
     lat: float = Field(..., ge=-90, le=90)
     lon: float = Field(..., ge=-180, le=180)
 
