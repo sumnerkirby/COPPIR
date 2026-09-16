@@ -11,6 +11,10 @@ build/
 venv/
 env/
 
+# Runtime output — scenarios are saved by the app at runtime.
+# The demo scenario is reproducible via examples/seed_demo.py instead.
+scenarios/
+
 # PyInstaller build artifacts
 packaging/dist/
 packaging/build_tmp/
