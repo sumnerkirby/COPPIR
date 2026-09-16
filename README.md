@@ -2,7 +2,7 @@
 
 **Common Operational Picture Program for Incident Response**
 
-COPPIR is a local desktop application for building and managing a live common operational picture during incident response training exercises. It runs on a single machine with no account or cloud service behind it.
+COPPIR is a local desktop application for building and managing a live common operational picture during incident response training exercises. It runs on a single machine with no account or cloud service behind it, and its frontend dependencies are vendored rather than loaded from a CDN. Map tiles, geocoding and OSM lookups are the only things that reach the network; without one the interface still works, but the map behind it is blank.
 
 ![COPPIR running a demo incident scenario in Washington DC](docs/screenshot.png)
 
