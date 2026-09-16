@@ -659,6 +659,7 @@ async def get_thresholds():
 async def create_threshold(t: ThresholdIn):
     rec = {**t.model_dump(), "id": str(uuid.uuid4())}
     thresholds.append(rec)
+    await broadcast({"type": "threshold_add", "threshold": rec})
     return rec
 
 @app.delete("/api/thresholds/{tid}")
@@ -666,6 +667,7 @@ async def delete_threshold(tid: str):
     for i, t in enumerate(thresholds):
         if t["id"] == tid:
             thresholds.pop(i)
+            await broadcast({"type": "threshold_delete", "tid": tid})
             return {"ok": True}
     raise HTTPException(404)
 
