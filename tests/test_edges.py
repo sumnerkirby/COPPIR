@@ -90,3 +90,60 @@ class TestClearAllPins:
         client.post("/api/edges", json={"from_pid": a["id"], "to_pid": b["id"]})
         client.delete("/api/pins")
         assert client.get("/api/edges").json() == []
+
+
+class TestPinDeleteCascade:
+    """Deleting a pin has to take its edges with it.
+
+    The server used to leave them behind. Nothing visibly broke, because the
+    frontend drops dangling edges on its own and renderEdge bails when an
+    endpoint is missing -- but they survived in every subsequent full_state
+    and were written into saved scenarios.
+    """
+
+    def test_deleting_a_pin_removes_edges_touching_it(self, client, two_pins):
+        a, b = two_pins
+        client.post("/api/edges", json={"from_pid": a["id"], "to_pid": b["id"]})
+        client.delete(f"/api/pins/{a['id']}")
+        assert client.get("/api/edges").json() == []
+
+    def test_works_from_either_end(self, client, two_pins):
+        a, b = two_pins
+        client.post("/api/edges", json={"from_pid": a["id"], "to_pid": b["id"]})
+        client.delete(f"/api/pins/{b['id']}")
+        assert client.get("/api/edges").json() == []
+
+    def test_removes_every_edge_touching_that_pin(self, client, make_pin):
+        hub = make_pin(name="Substation")
+        spokes = [make_pin(name=f"load {i}") for i in range(3)]
+        for s in spokes:
+            client.post("/api/edges", json={"from_pid": hub["id"], "to_pid": s["id"]})
+        assert len(client.get("/api/edges").json()) == 3
+
+        client.delete(f"/api/pins/{hub['id']}")
+        assert client.get("/api/edges").json() == []
+
+    def test_leaves_unrelated_edges_alone(self, client, make_pin):
+        a, b, c, d = (make_pin(name=n) for n in "abcd")
+        doomed = client.post("/api/edges",
+                             json={"from_pid": a["id"], "to_pid": b["id"]}).json()
+        survivor = client.post("/api/edges",
+                               json={"from_pid": c["id"], "to_pid": d["id"]}).json()
+
+        client.delete(f"/api/pins/{a['id']}")
+        remaining = client.get("/api/edges").json()
+        assert [e["id"] for e in remaining] == [survivor["id"]]
+        assert doomed["id"] not in [e["id"] for e in remaining]
+
+    def test_orphans_do_not_reach_a_saved_scenario(self, client, two_pins):
+        """The path that made this worth fixing: orphans were persisted."""
+        a, b = two_pins
+        client.post("/api/edges", json={"from_pid": a["id"], "to_pid": b["id"]})
+        client.delete(f"/api/pins/{a['id']}")
+
+        client.post("/api/scenarios/save", json={"name": "after delete"})
+        client.post("/api/state/clear")
+        client.post("/api/scenarios/load", json={"name": "after delete"})
+
+        assert client.get("/api/edges").json() == []
+        assert list(client.get("/api/pins").json()) == [b["id"]]

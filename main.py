@@ -377,6 +377,12 @@ async def delete_pin(pid: str):
     if pid not in pins:
         raise HTTPException(404, "Pin not found")
     del pins[pid]
+    # An edge cannot outlive either of the pins it joins. Clients drop these
+    # locally on pin_delete, but the server has to as well or they survive in
+    # every later full_state and get written into saved scenarios.
+    for eid in [eid for eid, e in edges.items()
+                if e["from_pid"] == pid or e["to_pid"] == pid]:
+        del edges[eid]
     await broadcast({"type": "pin_delete", "pid": pid})
     return {"ok": True}
 
