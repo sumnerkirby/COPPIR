@@ -157,6 +157,8 @@ WebSocket message types:
 | `inject_queued` | Inject created |
 | `inject_delete` | Inject deleted |
 | `inject_triggered` | Inject fired (carries updated pins + log entry) |
+| `threshold_add` | Alert threshold created |
+| `threshold_delete` | Alert threshold removed |
 | `log_entry` | Manual log entry added |
 
 ### Input validation

@@ -85,3 +85,52 @@ class TestDecisionLog:
 
     def test_starts_empty(self, client):
         assert client.get("/api/log").json() == []
+
+
+class TestThresholdBroadcasts:
+    """Thresholds used to be the only mutation that did not reach other clients.
+
+    A threshold added in one window stayed there until every other window
+    reconnected, so two operators could be watching the same sector against
+    different alert rules without either of them knowing.
+    """
+
+    def test_create_is_broadcast(self, client):
+        with client.websocket_connect("/ws") as ws:
+            ws.receive_json()                       # opening full_state
+            client.post("/api/thresholds", json={
+                "name": "Grid integrity", "sector": "power",
+                "below_pct": 40, "severity": "critical"})
+            msg = ws.receive_json()
+
+        assert msg["type"] == "threshold_add"
+        assert msg["threshold"]["name"] == "Grid integrity"
+        assert msg["threshold"]["id"]
+
+    def test_delete_is_broadcast(self, client):
+        t = client.post("/api/thresholds",
+                        json={"name": "temp", "sector": "power"}).json()
+        with client.websocket_connect("/ws") as ws:
+            ws.receive_json()
+            client.delete(f"/api/thresholds/{t['id']}")
+            msg = ws.receive_json()
+
+        assert msg["type"] == "threshold_delete"
+        assert msg["tid"] == t["id"]
+
+    def test_a_failed_delete_broadcasts_nothing(self, client):
+        with client.websocket_connect("/ws") as ws:
+            ws.receive_json()
+            assert client.delete("/api/thresholds/nope").status_code == 404
+            # A real message would arrive ahead of this one.
+            client.post("/api/log", json={"action": "sentinel"})
+            assert ws.receive_json()["type"] == "log_entry"
+
+    def test_both_windows_see_a_new_threshold(self, client):
+        with client.websocket_connect("/ws") as one, \
+             client.websocket_connect("/ws") as two:
+            one.receive_json()
+            two.receive_json()
+            client.post("/api/thresholds", json={"name": "shared", "sector": "medical"})
+            for ws in (one, two):
+                assert ws.receive_json()["type"] == "threshold_add"

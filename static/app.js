@@ -275,6 +275,12 @@ function connectWS() {
           if (ed.from_pid === p.id || ed.to_pid === p.id) renderEdge(ed);
         });
       });
+    } else if (msg.type === 'threshold_add') {
+      thresholds.push(msg.threshold);
+      renderThresholdList();
+    } else if (msg.type === 'threshold_delete') {
+      thresholds = thresholds.filter(t => t.id !== msg.tid);
+      renderThresholdList();
     } else if (msg.type === 'log_entry') {
       appendLogEntry(msg.entry);
       updateLogCount(document.querySelectorAll('.log-entry').length);
@@ -1410,20 +1416,13 @@ async function addThreshold() {
   if (!name) { showToast('Threshold name required'); return; }
   const r = await apiPost('/api/thresholds', { name, sector, below_pct: belowPct, severity });
   if (r) {
-    thresholds.push(r);
-    renderThresholdList();
     document.getElementById('thr-name').value = '';
     showToast('Threshold added');
-    evaluateThresholds();
   }
 }
 
 async function deleteThreshold(tid) {
   await fetch(`/api/thresholds/${tid}`, { method: 'DELETE' });
-  thresholds = thresholds.filter(t => t.id !== tid);
-  renderThresholdList();
-  clearThresholdBadges();
-  evaluateThresholds();
 }
 
 function evaluateThresholds() {
