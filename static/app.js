@@ -127,11 +127,25 @@ document.addEventListener('DOMContentLoaded', () => {
 function initMap() {
   map = L.map('map', { zoomControl: true }).setView([39.5, -98.35], 5);
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 19,
+  // Esri's Dark Gray Canvas is split into a base layer and a separate labels
+  // overlay; both are added here so place names sit above the terrain. Esri
+  // orders its tile path {z}/{y}/{x}, not the {z}/{x}/{y} most providers use.
+  //
+  // The cache only goes to zoom 16 — beyond that Esri returns a light grey
+  // "Map data not yet available" tile, which would break the dark theme at
+  // street level. maxNativeZoom stops requests at 16 and lets Leaflet upscale
+  // those tiles through zoom 19, so the map stays usable and on-theme.
+  const ESRI_CANVAS = 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas';
+  const esriOpts = { maxNativeZoom: 16, maxZoom: 19 };
+
+  L.tileLayer(`${ESRI_CANVAS}/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+    ...esriOpts,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; '
+               + 'Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> '
+               + 'contributors, and the GIS user community',
   }).addTo(map);
+
+  L.tileLayer(`${ESRI_CANVAS}/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, esriOpts).addTo(map);
 
   L.control.scale({ imperial: true, metric: false, position: 'bottomright' }).addTo(map);
 
