@@ -48,7 +48,7 @@ The app opens a dark-themed desktop window. A loading screen displays briefly wh
 
 ## The Map
 
-The full-screen map is the primary workspace. It uses OpenStreetMap data with a dark CartoDB tile layer.
+The full-screen map is the primary workspace. It uses Esri's Dark Gray Canvas basemap, which requires no API key. Tiles are cached by the provider through zoom 16 and upscaled beyond that, so street-level zoom stays on-theme.
 
 **Navigation**
 
