@@ -41,10 +41,29 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The suite drives the API through FastAPI's `TestClient`, so it needs no running
-server and makes no network calls. All state lives in module-level dicts in
-`main.py`, so `tests/conftest.py` clears them between tests and redirects
-scenario writes to a temp directory.
+There are two suites.
 
-Coverage is partial. If you touch something it does not reach yet, say in the
+`tests/` drives the API through FastAPI's `TestClient` -- no server, no network,
+runs in under a second. State lives in module-level containers in `state.py`,
+so `tests/conftest.py` clears them between tests and points scenario writes at
+a temp directory.
+
+`tests/browser/` drives a real Chromium against a real server, because some
+things are only observable there: ES module wiring, the `data-action`
+dispatcher, Leaflet rendering, websocket updates landing in an open page, and
+CSS layout at a given window size. It needs one extra step:
+
+```bash
+playwright install chromium
+```
+
+Without that the browser tests skip with a message rather than failing. They
+take around 40 seconds against under a second for the API suite, so CI runs
+them as a separate job -- `pytest --ignore=tests/browser` is the fast loop.
+
+The browser fixtures assert that no uncaught JS error occurred during a test.
+That is deliberate: the usual frontend failure here is silent, leaving a page
+that looks nearly right.
+
+Coverage is partial. If you touch something neither suite reaches, say in the
 PR how you checked it by hand.

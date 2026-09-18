@@ -2,3 +2,8 @@
 # needed; httpx is already there and is what TestClient runs on.
 -r requirements.txt
 pytest>=8.0
+
+# Browser tests. The Chromium binary is a separate download:
+#     playwright install chromium
+# Without it the browser tests skip with a message instead of failing.
+pytest-playwright>=0.5
