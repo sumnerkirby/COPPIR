@@ -257,6 +257,36 @@ The `WHEEL_C` constant (`2 * Math.PI * 19`) is the circumference of the SVG circ
 
 `ws.onmessage` receives all server-pushed events and dispatches them by `msg.type`. `updateSitrep()` and `refreshBulkCategories()` are called after every message. Heat layers are torn down and rebuilt if active, so they stay current.
 
+### Accessibility
+
+Status is encoded twice. Security status is the marker's fill colour **and** a
+glyph badge; operational status is the ring's colour **and** its border style.
+Colour alone was not enough: Compromised, Contained and Under Investigation are
+red, orange and amber, which a red-green colour-blind reader cannot separate.
+The legend is generated from `STATUS_COLORS`, `STATUS_GLYPH` and
+`OP_STATUS_BORDER` rather than written into `index.html`, so it cannot drift
+from what the markers actually draw.
+
+Modals are `role="dialog"` with `aria-modal`, named by their own headers.
+`initModalFocus()` handles all three keyboard concerns centrally, because an
+overlay's `display` is the only signal that a modal opened and there are eight
+of them:
+
+- focus moves into the modal, unless it has already placed focus itself
+- Tab cycles within the topmost open overlay
+- closing the last one returns focus to whatever opened it
+
+The element to return to is tracked as focus moves, not read when a modal
+opens — by then several of them have already focused a field of their own.
+
+Leaflet makes markers tabbable, so each `divIcon` carries an `aria-label` with
+the pin's name, category and both statuses; the icon font and glyph inside are
+`aria-hidden`. Panel toggles carry `aria-expanded`, and the collapsible section
+headers take Enter and Space.
+
+`prefers-reduced-motion: reduce` collapses every animation and transition. All
+of them here are decoration and nothing reads differently without them.
+
 ### Security helpers
 
 Two module-level functions guard all dynamic HTML construction:

@@ -8,7 +8,7 @@
 // heatmaps, sector zones, export and bulk paths all iterate it on every
 // update. Treat it as read-only; write through the functions here.
 
-import { CATEGORY_ICONS, OP_STATUS_BORDER, STATUS_COLORS } from './constants.js';
+import { CATEGORY_ICONS, OP_STATUS_BORDER, STATUS_COLORS, STATUS_GLYPH } from './constants.js';
 import { getMap } from './map.js';
 import { darkenHex, debounce, escHtml, safeColor } from './utils.js';
 
@@ -40,9 +40,17 @@ function makePinIcon(pin) {
   const ops = OP_STATUS_BORDER[pin.op_status] || OP_STATUS_BORDER['Healthy'];
   const border = `${ops.width} ${ops.style} ${safeColor(ops.color)}`;
   const ico = CATEGORY_ICONS[pin.category] || 'fa-circle-dot';
+  const glyph = STATUS_GLYPH[pin.status] || '';
+  // Leaflet makes markers tabbable, but a div of icon fonts announces nothing.
+  const label = `${pin.name}. ${pin.category}. `
+              + `Security ${pin.status}. Operational ${pin.op_status || 'Healthy'}.`;
   return L.divIcon({
     className: '',
-    html: `<div class="pin-icon" style="background:${col};border:${border}"><i class="fa-solid ${escHtml(ico)}"></i></div>`,
+    html: `<div class="pin-icon" role="img" aria-label="${escHtml(label)}" `
+        + `style="background:${col};border:${border}">`
+        + `<i class="fa-solid ${escHtml(ico)}" aria-hidden="true"></i>`
+        + (glyph ? `<span class="pin-status-glyph" aria-hidden="true">${glyph}</span>` : '')
+        + `</div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
   });

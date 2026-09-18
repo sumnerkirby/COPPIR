@@ -622,6 +622,7 @@ select.inp option { background: var(--bg-input); color: var(--fg-text); }
 
 /* ── Pin markers ── */
 .pin-icon {
+  position: relative;
   width: 24px; height: 24px;
   border-radius: 50%;
   border: 2px solid;
@@ -635,6 +636,23 @@ select.inp option { background: var(--bg-input); color: var(--fg-text); }
   transition: transform 0.12s;
 }
 .pin-icon:hover { transform: scale(1.25); }
+
+/* The non-colour half of the status encoding. Sits clear of the category
+   icon so both stay readable at 28px. */
+.pin-status-glyph {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  background: #000a00;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  font-size: 9px;
+  line-height: 11px;
+  text-align: center;
+  font-weight: bold;
+  pointer-events: none;
+}
 
 .search-dot {
   /* Leaflet CircleMarker styles are inline */
@@ -1170,4 +1188,82 @@ select.inp option { background: var(--bg-input); color: var(--fg-text); }
   line-height: 1.6;
   margin: 4px 0 10px;
   white-space: pre-line;
+}
+
+/* ── Map legend ── */
+/* Bottom-right, because the left panel may grow to the full height of the
+   window. It steps aside for the two panels that can reach it; both selectors
+   depend on the legend coming after them in the document. */
+#map-legend {
+  position: fixed;
+  right: 12px;
+  bottom: 62px;
+  width: 196px;
+  transition: right 0.22s ease, bottom 0.22s ease;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  z-index: 480;
+  font-size: 10px;
+}
+#map-legend[hidden] { display: none; }
+#right-panel.open ~ #map-legend { right: 272px; }
+#log-panel.open   ~ #map-legend { bottom: 248px; }
+
+#legend-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-dim);
+  letter-spacing: 2px;
+}
+#legend-hdr button { padding: 0 5px; font-size: 10px; line-height: 1.4; }
+
+#legend-body { padding: 6px 8px 8px; }
+.legend-group + .legend-group { margin-top: 8px; }
+.legend-group-hdr { color: var(--fg-dim); letter-spacing: 1px; margin-bottom: 4px; }
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+  color: var(--fg-text);
+}
+.legend-swatch {
+  flex: 0 0 auto;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  font-weight: bold;
+  color: rgba(0, 0, 0, 0.8);
+}
+/* Operational status is a ring, matching how the markers carry it. */
+.legend-ring { background: transparent; }
+
+/* Motion is decoration here; the app reads the same without it. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Focus ── */
+/* Only .inp and the metric name carried any focus styling, so tabbing through
+   the toolbars and modals gave no indication of where you were. */
+:focus-visible {
+  outline: 2px solid var(--fg-bright);
+  outline-offset: 2px;
+}
+.leaflet-marker-icon:focus-visible {
+  outline: 2px solid var(--fg-bright);
+  outline-offset: 3px;
 }

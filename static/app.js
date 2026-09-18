@@ -18,7 +18,7 @@ import {
 } from './js/maptools.js';
 import {
   CATEGORY_ICONS, OPS_COLORS, OP_STATUS_BORDER, SECTORS, SECTOR_ZONE_COLORS,
-  STATUS_COLORS, STATUS_SCORE, WHEEL_C,
+  STATUS_COLORS, STATUS_GLYPH, STATUS_SCORE, WHEEL_C,
 } from './js/constants.js';
 import {
   convexHull, darkenHex, debounce, escHtml, formatDist, haversineM,
@@ -85,6 +85,8 @@ function boot() {
   initClock();
   setPinClickHandler(openPinModal);
   initDomHandlers();
+  initModalFocus();
+  initLegend();
   loadInjects();
   loadCustomMetrics();
 }
@@ -101,7 +103,26 @@ function initCollapsibleSections() {
   const collapsed = new Set(saved ?? COLLAPSED_BY_DEFAULT);
 
   const sections = document.querySelectorAll('#right-panel .panel-section[data-section]');
-  sections.forEach(sec => sec.classList.toggle('collapsed', collapsed.has(sec.dataset.section)));
+  const mark = sec => {
+    const open = !sec.classList.contains('collapsed');
+    const hdr = sec.querySelector('.section-hdr');
+    hdr?.setAttribute('role', 'button');
+    hdr?.setAttribute('tabindex', '0');
+    hdr?.setAttribute('aria-expanded', String(open));
+  };
+  sections.forEach(sec => {
+    sec.classList.toggle('collapsed', collapsed.has(sec.dataset.section));
+    mark(sec);
+  });
+
+  // A header that behaves like a button has to answer the keyboard like one.
+  document.getElementById('right-panel').addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const hdr = ev.target.closest('.section-hdr');
+    if (!hdr || ev.target.closest('button')) return;
+    ev.preventDefault();
+    hdr.click();
+  });
 
   document.getElementById('right-panel').addEventListener('click', ev => {
     const hdr = ev.target.closest('.section-hdr');
@@ -110,6 +131,7 @@ function initCollapsibleSections() {
     const sec = hdr.closest('.panel-section[data-section]');
     if (!sec) return;
     sec.classList.toggle('collapsed');
+    mark(sec);
     const now = [...sections].filter(s => s.classList.contains('collapsed'))
                              .map(s => s.dataset.section);
     try { localStorage.setItem('coppir_panel_sections', JSON.stringify(now)); } catch {}
@@ -197,6 +219,10 @@ function initKeyboard() {
   });
   document.getElementById('log-action-inp').addEventListener('keydown', e => {
     if (e.key === 'Enter') addLogEntry();
+  });
+  document.getElementById('log-hdr').addEventListener('keydown', e => {
+    if (e.target.closest('button')) return;      // EXPORT sits in the header
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
   });
   document.getElementById('loc-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') geoSearch();
@@ -378,6 +404,52 @@ function fitToPins(list) {
   getMap().fitBounds(L.latLngBounds(target.map(p => [p.lat, p.lon])),
                      { padding: [60, 60], maxZoom: 15 });
   return true;
+}
+
+// ── Map legend ─────────────────────────────────────────────────────────────
+// Generated from the same tables makePinIcon draws from. Writing it out in
+// index.html would have put the status colours in a third place, and the key
+// on the map is the one thing that must not drift from the map.
+function renderLegend() {
+  const security = Object.entries(STATUS_COLORS).map(([status, c]) => `
+    <div class="legend-row">
+      <span class="legend-swatch" style="background:${safeColor(c.circle)}">${STATUS_GLYPH[status] || ''}</span>
+      <span>${escHtml(status)}</span>
+    </div>`).join('');
+
+  const operational = Object.entries(OP_STATUS_BORDER).map(([status, b]) => `
+    <div class="legend-row">
+      <span class="legend-swatch legend-ring"
+            style="border:${b.width} ${b.style} ${safeColor(b.color)}"></span>
+      <span>${escHtml(status)}</span>
+    </div>`).join('');
+
+  document.getElementById('legend-body').innerHTML = `
+    <div class="legend-group">
+      <div class="legend-group-hdr">SECURITY &mdash; FILL</div>${security}
+    </div>
+    <div class="legend-group">
+      <div class="legend-group-hdr">OPERATIONAL &mdash; RING</div>${operational}
+    </div>`;
+}
+
+function initLegend() {
+  renderLegend();
+  let shown = true;
+  try { shown = localStorage.getItem('coppir_legend') !== 'hidden'; } catch {}
+  setLegendVisible(shown);
+}
+
+function setLegendVisible(shown) {
+  document.getElementById('map-legend').hidden = !shown;
+  const btn = document.getElementById('legend-btn');
+  btn?.classList.toggle('btn-active', shown);
+  btn?.setAttribute('aria-expanded', String(shown));
+  try { localStorage.setItem('coppir_legend', shown ? 'shown' : 'hidden'); } catch {}
+}
+
+function toggleLegend() {
+  setLegendVisible(document.getElementById('map-legend').hidden);
 }
 
 // ── Right-click context menu ───────────────────────────────────────────────
@@ -736,12 +808,71 @@ async function confirmClear() {
 function togglePanel() {
   panelHidden = !panelHidden;
   document.getElementById('panel').classList.toggle('hidden', panelHidden);
+  document.querySelector('[data-action="togglePanel"]')
+    ?.setAttribute('aria-expanded', String(!panelHidden));
 }
 
 function toggleRightPanel() {
   rightPanelOpen = !rightPanelOpen;
   document.getElementById('right-panel').classList.toggle('open', rightPanelOpen);
-  document.getElementById('tools-btn')?.classList.toggle('btn-active', rightPanelOpen);
+  const btn = document.getElementById('tools-btn');
+  btn?.classList.toggle('btn-active', rightPanelOpen);
+  btn?.setAttribute('aria-expanded', String(rightPanelOpen));
+}
+
+// ── Modal focus ────────────────────────────────────────────────────────────
+// Modals are shown by setting `display` on an overlay, which stops none of the
+// page behind them receiving Tab and never hands focus back to whatever opened
+// them. Both are handled centrally rather than at each of the eight call sites.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), '
+                + 'select:not([disabled]), textarea:not([disabled]), '
+                + '[tabindex]:not([tabindex="-1"])';
+
+let focusBeforeModal = null;
+
+function focusableIn(el) {
+  return [...el.querySelectorAll(FOCUSABLE)].filter(f => f.offsetParent !== null);
+}
+
+/** The topmost open overlay, which is the one Tab has to stay inside. */
+function topModal() {
+  return [...document.querySelectorAll('.modal-overlay')]
+    .filter(el => el.style.display !== 'none')
+    .pop();
+}
+
+function initModalFocus() {
+  // Tracked continuously rather than read when a modal opens: several modals
+  // focus a field of their own first, so by then the answer is already inside.
+  document.addEventListener('focusin', ev => {
+    if (!ev.target.closest('.modal-overlay')) focusBeforeModal = ev.target;
+  });
+
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Tab') return;
+    const modal = topModal();
+    if (!modal) return;
+    const items = focusableIn(modal);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+  });
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    new MutationObserver(() => {
+      const shown = el.style.display !== 'none';
+      if (shown === (el.dataset.open === '1')) return;
+      if (shown) {
+        el.dataset.open = '1';
+        // Skip when the modal has already placed focus itself.
+        if (!el.contains(document.activeElement)) focusableIn(el)[0]?.focus();
+      } else {
+        delete el.dataset.open;
+        if (!topModal()) focusBeforeModal?.focus?.();
+      }
+    }).observe(el, { attributes: true, attributeFilter: ['style'] });
+  });
 }
 
 // ── Modal helpers ──────────────────────────────────────────────────────────
@@ -798,7 +929,8 @@ const ACTIONS = {
   setColor, setMarkupColor, setQueryOrigin, startDraw, toggleCategoryLayer,
   toggleClusters, toggleHeatmap, toggleLog, toggleMapLock, toggleMeasure,
   toggleMetricsPanel, toggleOpsHeatmap, togglePanel, toggleRightPanel,
-  toggleSectorZones, toggleTimer, triggerInject, undoAction, useMapCentreForInject
+  toggleLegend, toggleSectorZones, toggleTimer, triggerInject, undoAction,
+  useMapCentreForInject
 };
 
 document.addEventListener('click', ev => {
@@ -944,6 +1076,8 @@ function toggleLog() {
   logOpen = !logOpen;
   document.getElementById('log-panel').classList.toggle('open', logOpen);
   document.getElementById('log-chevron').textContent = logOpen ? '▼' : '▲';
+  document.querySelectorAll('[data-action="toggleLog"]')
+    .forEach(el => el.setAttribute('aria-expanded', String(logOpen)));
   if (logOpen) { refreshLogPinSelect(); scrollLogToBottom(); }
 }
 
