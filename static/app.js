@@ -1022,21 +1022,33 @@ async function applyBulkOpStatus() {
   if (r?.ok) showToast(`Updated ${r.count} pin(s) → ${op_status}`);
 }
 
+/** Hand the browser a generated file to save. */
+function downloadBlob(text, filename, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function stamp() {
+  return new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+}
+
 function exportLog() {
   fetch('/api/log').then(r => r.json()).then(entries => {
     const rows = [['Timestamp','Action','Asset','Notes']];
-    entries.forEach(e => rows.push([
-      e.timestamp,
-      `"${e.action.replace(/"/g,'""')}"`,
-      e.asset_name || '',
-      `"${(e.notes||'').replace(/"/g,'""')}"`,
-    ]));
-    const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `coppir_log_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
-    a.click();
+    entries.forEach(e => rows.push([e.timestamp, e.action, e.asset_name, e.notes]));
+    const csv = rows.map(r => r.map(csvField).join(',')).join('\n');
+    downloadBlob(csv, `coppir_log_${stamp()}.csv`, 'text/csv');
   });
+}
+
+/** Quote every field. Only two of the four were quoted, so a comma or a
+ *  newline in an asset name shifted every column after it. */
+function csvField(v) {
+  return `"${String(v ?? '').replace(/"/g, '""')}"`;
 }
 
 // ── Network topology ───────────────────────────────────────────────────────
@@ -1529,9 +1541,17 @@ async function exportBriefing() {
 <table><tr><th>TIME</th><th>ACTION</th><th>ASSET</th></tr>${logRows || '<tr><td colspan="3" style="color:#555">No entries.</td></tr>'}</table>
 </body></html>`;
 
+  // Some of pywebview's platform backends have no pop-up support at all, which
+  // is exactly where this matters: the packaged app is how most people run it.
+  // Fall back to saving the file rather than dead-ending on a toast.
   const w = window.open('', '_blank');
-  if (!w) { showToast('Pop-up blocked — allow pop-ups and retry'); return; }
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => w.print(), 600);
+  if (w) {
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 600);
+    return;
+  }
+  const filename = `coppir_sitrep_${stamp()}.html`;
+  downloadBlob(html, filename, 'text/html');
+  showToast(`Saved ${filename}`);
 }
