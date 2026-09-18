@@ -8,7 +8,7 @@
 // heatmaps, sector zones, export and bulk paths all iterate it on every
 // update. Treat it as read-only; write through the functions here.
 
-import { CATEGORY_ICONS, OP_STATUS_BORDER, STATUS_COLORS } from './constants.js';
+import { CATEGORY_ICONS, OP_STATUS_BORDER, STATUS_COLORS, STATUS_GLYPH } from './constants.js';
 import { getMap } from './map.js';
 import { darkenHex, debounce, escHtml, safeColor } from './utils.js';
 
@@ -40,34 +40,64 @@ function makePinIcon(pin) {
   const ops = OP_STATUS_BORDER[pin.op_status] || OP_STATUS_BORDER['Healthy'];
   const border = `${ops.width} ${ops.style} ${safeColor(ops.color)}`;
   const ico = CATEGORY_ICONS[pin.category] || 'fa-circle-dot';
+  const glyph = STATUS_GLYPH[pin.status] || '';
+  // Leaflet makes markers tabbable, but a div of icon fonts announces nothing.
+  const label = `${pin.name}. ${pin.category}. `
+              + `Security ${pin.status}. Operational ${pin.op_status || 'Healthy'}.`;
   return L.divIcon({
     className: '',
-    html: `<div class="pin-icon" style="background:${col};border:${border}"><i class="fa-solid ${escHtml(ico)}"></i></div>`,
+    html: `<div class="pin-icon" role="img" aria-label="${escHtml(label)}" `
+        + `style="background:${col};border:${border}">`
+        + `<i class="fa-solid ${escHtml(ico)}" aria-hidden="true"></i>`
+        + (glyph ? `<span class="pin-status-glyph" aria-hidden="true">${glyph}</span>` : '')
+        + `</div>`,
     iconSize: [28, 28],
     iconAnchor: [14, 14],
   });
 }
 
-export function renderPin(pin) {
-  if (pinMarkers[pin.id]) {
-    const old = pinMarkers[pin.id];
-    if (clusterEnabled && clusterGroup) clusterGroup.removeLayer(old);
-    else getMap().removeLayer(old);
-  }
-  pins[pin.id] = pin;
+function tooltipHtml(pin) {
+  return `<div>${escHtml(pin.name)}</div><div style="font-size:10px;opacity:0.8">`
+       + `SEC: ${escHtml(pin.status)} &nbsp;·&nbsp; OPS: ${escHtml(pin.op_status || 'Healthy')}</div>`;
+}
 
-  const icon = makePinIcon(pin);
-  const marker = L.marker([pin.lat, pin.lon], { icon });
-  marker.bindTooltip(
-      `<div>${escHtml(pin.name)}</div><div style="font-size:10px;opacity:0.8">SEC: ${escHtml(pin.status)} &nbsp;·&nbsp; OPS: ${escHtml(pin.op_status || 'Healthy')}</div>`,
-      { permanent: false, direction: 'top', offset: [0, -8] }
-    )
+export function renderPin(pin) {
+  pins[pin.id] = pin;
+  const existing = pinMarkers[pin.id];
+
+  if (existing) {
+    // Reuse the marker. Dropping the layer and building a new one made Leaflet
+    // tear down and re-insert a DOM node per pin on every update, which is
+    // what a bulk status change over several hundred pins was paying for.
+    existing.setIcon(makePinIcon(pin));
+    existing.setLatLng([pin.lat, pin.lon]);
+    existing.setTooltipContent(tooltipHtml(pin));
+    // setIcon rebuilds the icon element, so the visibility styling goes with it.
+    applyPinVisibility(pin.id);
+    return;
+  }
+
+  const marker = L.marker([pin.lat, pin.lon], { icon: makePinIcon(pin) });
+  marker.bindTooltip(tooltipHtml(pin),
+      { permanent: false, direction: 'top', offset: [0, -8] })
     .on('click', () => pinClicked(pin.id));
 
   if (clusterEnabled && clusterGroup) clusterGroup.addLayer(marker);
   else marker.addTo(getMap());
   pinMarkers[pin.id] = marker;
   applyPinVisibility(pin.id);
+}
+
+/**
+ * Bring the rendered set in line with an authoritative snapshot, keeping the
+ * markers that survive it. The alternative -- clear everything, then draw it
+ * all again -- is what full_state and inject_triggered used to do.
+ */
+export function syncPins(snapshot) {
+  for (const pid of Object.keys(pins)) {
+    if (!(pid in snapshot)) removePin(pid);
+  }
+  Object.values(snapshot).forEach(renderPin);
 }
 
 export function removePin(pid) {
@@ -91,14 +121,23 @@ export function clearAllPins() {
   for (const k of Object.keys(pins)) delete pins[k];
 }
 
+function matchesFilter(pin) {
+  if (!filterQuery) return true;
+  return pin.name.toLowerCase().includes(filterQuery)
+      || pin.category.toLowerCase().includes(filterQuery);
+}
+
+/** The pins actually on show: matching the filter, in a visible category. */
+export function getVisiblePins() {
+  return Object.values(pins).filter(p => !hiddenCategories.has(p.category) && matchesFilter(p));
+}
+
 export function applyPinVisibility(pid) {
   const marker = pinMarkers[pid];
   const pin    = pins[pid];
   if (!marker || !pin) return;
   const catHidden  = hiddenCategories.has(pin.category);
-  const filterMiss = !!filterQuery
-    && !pin.name.toLowerCase().includes(filterQuery)
-    && !pin.category.toLowerCase().includes(filterQuery);
+  const filterMiss = !matchesFilter(pin);
   const opacity = catHidden ? 0 : filterMiss ? 0.1 : 1;
   marker.setOpacity(opacity);
   const el = marker.getElement?.();
@@ -110,10 +149,7 @@ export function filterPins(query) {
   let matched = 0;
   const total = Object.keys(pins).length;
   Object.values(pins).forEach(pin => {
-    const visible = !filterQuery
-      || pin.name.toLowerCase().includes(filterQuery)
-      || pin.category.toLowerCase().includes(filterQuery);
-    if (visible && !hiddenCategories.has(pin.category)) matched++;
+    if (matchesFilter(pin) && !hiddenCategories.has(pin.category)) matched++;
     applyPinVisibility(pin.id);
   });
   const statusEl = document.getElementById('filter-status');

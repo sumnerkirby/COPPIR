@@ -101,9 +101,16 @@ def app_page(page, live_server):
     almost right. Collecting errors and asserting on them is the point.
     """
     errors = []
+
+    def _is_noise(text):
+        # Chromium logs a console error for every non-2xx response. A request
+        # the server was meant to reject is not an uncaught JS error, and
+        # neither is the websocket closing as the page tears down.
+        return "WebSocket" in text or "Failed to load resource" in text
+
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: errors.append(f"console.error: {m.text}")
-            if m.type == "error" and "WebSocket" not in m.text else None)
+            if m.type == "error" and not _is_noise(m.text) else None)
 
     # The window run.py opens. Several panels sit off-screen at narrower
     # widths, and the SITREP strip has its own breakpoint below 1360px.

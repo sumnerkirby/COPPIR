@@ -1,7 +1,8 @@
 import { createMap, getMap, toggleMapLock } from './js/map.js';
 import {
-  clearAllPins, clearFilter, filterPins, getPin, getPins, removePin, renderPin,
-  renderCategoryToggles, setPinClickHandler, toggleCategoryLayer, toggleClusters,
+  clearAllPins, clearFilter, filterPins, getPin, getPins, getVisiblePins, removePin,
+  renderPin, renderCategoryToggles, setPinClickHandler, syncPins, toggleCategoryLayer,
+  toggleClusters,
 } from './js/pins.js';
 import {
   clearAllEdges, getEdges, removeEdgesTouching, renderEdge,
@@ -17,16 +18,33 @@ import {
 } from './js/maptools.js';
 import {
   CATEGORY_ICONS, OPS_COLORS, OP_STATUS_BORDER, SECTORS, SECTOR_ZONE_COLORS,
-  STATUS_COLORS, STATUS_SCORE, WHEEL_C,
+  STATUS_COLORS, STATUS_GLYPH, STATUS_SCORE, WHEEL_C,
 } from './js/constants.js';
 import {
   convexHull, darkenHex, debounce, escHtml, formatDist, haversineM,
   integrityColor, safeColor,
 } from './js/utils.js';
+import { askConfirm, isAsking, resolveAsk } from './js/dialog.js';
 import { showToast } from './js/toast.js';
 import { apiPost, apiPut } from './js/api.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
+
+// Cmd on macOS, Ctrl everywhere else. The app ships as a .dmg, and only
+// ctrlKey was ever checked, so none of these fired there -- Cmd+S reached the
+// WebView's own save dialog instead.
+const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+const ACCEL_LABEL = IS_MAC ? '\u2318' : 'Ctrl+';
+
+/** Relabel the accelerator hints for the platform the app is actually on. */
+function labelAccelerators() {
+  document.querySelectorAll('[data-accel]').forEach(el => {
+    const combo = ACCEL_LABEL + el.dataset.accel;
+    if (el.hasAttribute('data-accel-label')) el.textContent = combo;
+    else el.title = combo;
+  });
+}
+
 
 // 19 matches the r attribute on the SVG circles used for sector and custom metric wheels.
 
@@ -53,6 +71,11 @@ let rightPanelOpen   = false;
 let logOpen     = false;
 let injectAlertTimer = null;
 let searchCircle     = null;
+// The map reframes itself on the first full_state that carries pins, and on an
+// explicit scenario load. Doing it on every full_state would yank the view back
+// from wherever the user was looking each time the websocket reconnected.
+let hasFitted           = false;
+let fitOnNextFullState  = false;
 
 // ── Init ───────────────────────────────────────────────────────────────────
 function boot() {
@@ -62,17 +85,61 @@ function boot() {
   initClock();
   setPinClickHandler(openPinModal);
   initDomHandlers();
+  initModalFocus();
+  initLegend();
   loadInjects();
   loadCustomMetrics();
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', boot);
-} else {
-  boot();
+// Everything starts open: the panel is where these tools are discovered, and
+// folding them by default hides controls a first-time user has not met yet.
+// Ordering is what keeps the inject queue above the fold; collapsing is the
+// escape valve for operators who want less, and it persists once used.
+const COLLAPSED_BY_DEFAULT = [];
+
+function initCollapsibleSections() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem('coppir_panel_sections') || 'null'); } catch { saved = null; }
+  const collapsed = new Set(saved ?? COLLAPSED_BY_DEFAULT);
+
+  const sections = document.querySelectorAll('#right-panel .panel-section[data-section]');
+  const mark = sec => {
+    const open = !sec.classList.contains('collapsed');
+    const hdr = sec.querySelector('.section-hdr');
+    hdr?.setAttribute('role', 'button');
+    hdr?.setAttribute('tabindex', '0');
+    hdr?.setAttribute('aria-expanded', String(open));
+  };
+  sections.forEach(sec => {
+    sec.classList.toggle('collapsed', collapsed.has(sec.dataset.section));
+    mark(sec);
+  });
+
+  // A header that behaves like a button has to answer the keyboard like one.
+  document.getElementById('right-panel').addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const hdr = ev.target.closest('.section-hdr');
+    if (!hdr || ev.target.closest('button')) return;
+    ev.preventDefault();
+    hdr.click();
+  });
+
+  document.getElementById('right-panel').addEventListener('click', ev => {
+    const hdr = ev.target.closest('.section-hdr');
+    // The inject queue header carries its own + NEW button.
+    if (!hdr || ev.target.closest('button')) return;
+    const sec = hdr.closest('.panel-section[data-section]');
+    if (!sec) return;
+    sec.classList.toggle('collapsed');
+    mark(sec);
+    const now = [...sections].filter(s => s.classList.contains('collapsed'))
+                             .map(s => s.dataset.section);
+    try { localStorage.setItem('coppir_panel_sections', JSON.stringify(now)); } catch {}
+  });
 }
 
 function initDomHandlers() {
+  initCollapsibleSections();
   // Was inline: onkeydown="if(e.key==='Enter')geoSearch()". Inline handlers
   // are given `event`, not `e`, so that threw ReferenceError every time and
   // Enter never searched -- you had to click GO.
@@ -85,6 +152,17 @@ function initDomHandlers() {
     .addEventListener('change', ev => setMarkupColor(ev.target.value));
   document.getElementById('pin-filter-inp')
     .addEventListener('input', ev => filterPins(ev.target.value));
+  // Filtering dims the misses but leaves the view where it was, so a match
+  // off-screen stayed lost. Enter goes to whatever is still showing.
+  document.getElementById('pin-filter-inp')
+    .addEventListener('keydown', ev => {
+      if (ev.key !== 'Enter') return;
+      if (!fitToPins(getVisiblePins())) showToast('Nothing matches that filter');
+    });
+  document.getElementById('inj-spawn-on')
+    .addEventListener('change', ev => {
+      document.getElementById('inj-spawn-fields').style.display = ev.target.checked ? 'block' : 'none';
+    });
 
   // Metric names are contenteditable and rendered on the fly. blur does not
   // bubble, so delegate the bubbling equivalent instead.
@@ -123,19 +201,28 @@ function initClock() {
 }
 
 function initKeyboard() {
+  labelAccelerators();
   document.addEventListener('keydown', e => {
-    if (e.ctrlKey && e.key === 's') { e.preventDefault(); openScenarioModal(); }
-    if (e.ctrlKey && e.key === 'l') { e.preventDefault(); toggleLog(); }
-    if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoAction(); }
+    const accel = e.metaKey || e.ctrlKey;
+    // e.key carries the shifted form, so Caps Lock alone used to break these.
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (accel && key === 's') { e.preventDefault(); openScenarioModal(); }
+    if (accel && key === 'l') { e.preventDefault(); toggleLog(); }
+    if (accel && key === 'z') { e.preventDefault(); undoAction(); }
     if (e.key === '?' && !e.target.matches('input,textarea,select')) openShortcuts();
     if (e.key === 'Escape') {
-      if (cancelActiveDraw()) { /* a part-drawn shape was discarded */ }
+      if (isAsking()) { resolveAsk(false); }
+      else if (cancelActiveDraw()) { /* a part-drawn shape was discarded */ }
       else if (isMeasuring()) { finishMeasure(); }
       else { closeAllModals(); }
     }
   });
   document.getElementById('log-action-inp').addEventListener('keydown', e => {
     if (e.key === 'Enter') addLogEntry();
+  });
+  document.getElementById('log-hdr').addEventListener('keydown', e => {
+    if (e.target.closest('button')) return;      // EXPORT sits in the header
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleLog(); }
   });
   document.getElementById('loc-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') geoSearch();
@@ -174,13 +261,16 @@ function connectWS() {
   ws.onmessage = e => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'full_state') {
-      clearAllPins();
+      syncPins(msg.pins);
       clearAllEdges();
-      Object.values(msg.pins).forEach(renderPin);
       if (msg.edges)      { msg.edges.forEach(renderEdge); }
       if (msg.thresholds) { thresholds = msg.thresholds; renderThresholdList(); }
       if (msg.injects) { clearInjectList(); msg.injects.forEach(renderInjectItem); }
       if (msg.log)     { clearLogEntries(); msg.log.forEach(appendLogEntry); updateLogCount(msg.log.length); }
+      // hasFitted only flips once a frame actually happened, so a session that
+      // starts empty still gets framed by the first state that carries pins.
+      if (fitOnNextFullState || !hasFitted) hasFitted = fitToPins() || hasFitted;
+      fitOnNextFullState = false;
     } else if (msg.type === 'pin_add') {
       renderPin(msg.pin);
     } else if (msg.type === 'bulk_add') {
@@ -206,8 +296,9 @@ function connectWS() {
       document.getElementById(`inj-${msg.iid}`)?.remove();
     } else if (msg.type === 'inject_triggered') {
       renderInjectItem(msg.inject);
-      clearAllPins(); Object.values(msg.pins).forEach(renderPin);
-      if (msg.new_pin) renderPin(msg.new_pin);
+      // msg.pins is the whole set and already contains msg.new_pin, so this
+      // reconciles rather than rebuilding every marker mid-exercise.
+      syncPins(msg.pins);
       appendLogEntry(msg.log_entry);
       updateLogCount(document.querySelectorAll('.log-entry').length);
       showInjectAlert(msg.inject);
@@ -303,6 +394,64 @@ function setWheelPct(svg, pct) {
   label.textContent = Math.round(pct) + '%';
 }
 
+/**
+ * Frame the given pins, or every pin when none are given.
+ * Returns false when there is nothing to frame, so callers can say so.
+ */
+function fitToPins(list) {
+  const target = list ?? Object.values(getPins());
+  if (!target.length) return false;
+  getMap().fitBounds(L.latLngBounds(target.map(p => [p.lat, p.lon])),
+                     { padding: [60, 60], maxZoom: 15 });
+  return true;
+}
+
+// ── Map legend ─────────────────────────────────────────────────────────────
+// Generated from the same tables makePinIcon draws from. Writing it out in
+// index.html would have put the status colours in a third place, and the key
+// on the map is the one thing that must not drift from the map.
+function renderLegend() {
+  const security = Object.entries(STATUS_COLORS).map(([status, c]) => `
+    <div class="legend-row">
+      <span class="legend-swatch" style="background:${safeColor(c.circle)}">${STATUS_GLYPH[status] || ''}</span>
+      <span>${escHtml(status)}</span>
+    </div>`).join('');
+
+  const operational = Object.entries(OP_STATUS_BORDER).map(([status, b]) => `
+    <div class="legend-row">
+      <span class="legend-swatch legend-ring"
+            style="border:${b.width} ${b.style} ${safeColor(b.color)}"></span>
+      <span>${escHtml(status)}</span>
+    </div>`).join('');
+
+  document.getElementById('legend-body').innerHTML = `
+    <div class="legend-group">
+      <div class="legend-group-hdr">SECURITY &mdash; FILL</div>${security}
+    </div>
+    <div class="legend-group">
+      <div class="legend-group-hdr">OPERATIONAL &mdash; RING</div>${operational}
+    </div>`;
+}
+
+function initLegend() {
+  renderLegend();
+  let shown = true;
+  try { shown = localStorage.getItem('coppir_legend') !== 'hidden'; } catch {}
+  setLegendVisible(shown);
+}
+
+function setLegendVisible(shown) {
+  document.getElementById('map-legend').hidden = !shown;
+  const btn = document.getElementById('legend-btn');
+  btn?.classList.toggle('btn-active', shown);
+  btn?.setAttribute('aria-expanded', String(shown));
+  try { localStorage.setItem('coppir_legend', shown ? 'shown' : 'hidden'); } catch {}
+}
+
+function toggleLegend() {
+  setLegendVisible(document.getElementById('map-legend').hidden);
+}
+
 // ── Right-click context menu ───────────────────────────────────────────────
 function onRightClick(e) {
   ctxLatLng = e.latlng;
@@ -353,6 +502,9 @@ function resolveNameModal(confirmed) {
 }
 document.getElementById('nm-name').addEventListener('keydown', e => {
   if (e.key === 'Enter') resolveNameModal(true);
+});
+document.getElementById('ask-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') resolveAsk(true);
 });
 
 // ── Location search ────────────────────────────────────────────────────────
@@ -545,13 +697,16 @@ async function deletePinLink(eid, pid) {
 async function savePinEdit() {
   const pid  = document.getElementById('em-pid').value;
   const prev = { ...getPins()[pid] };
-  await apiPut(`/api/pins/${pid}`, {
+  const r = await apiPut(`/api/pins/${pid}`, {
     name:      document.getElementById('em-name').value.trim(),
     status:    document.getElementById('em-status').value,
     op_status: document.getElementById('em-op-status').value,
     pin_color: document.getElementById('em-color').value || null,
     notes:     document.getElementById('em-notes').value,
   });
+  // Closing on a rejected save discarded the edit and left an undo entry that
+  // pointed at a change the server never made.
+  if (!r) return;
   pushUndo({ type: 'pin_update', pid, prev });
   closeModal('pin-modal');
 }
@@ -612,19 +767,38 @@ async function saveScenario() {
 }
 
 async function loadScenario(name) {
-  if (!confirm(`Load scenario "${name}"? Current session will be replaced.`)) return;
+  const ok = await askConfirm({
+    title: 'LOAD SCENARIO',
+    message: `Load "${name}"?\n\nThe current session will be replaced.`,
+    confirmLabel: 'LOAD',
+  });
+  if (!ok) return;
+  // Set before the request: the broadcast can land before the response does.
+  fitOnNextFullState = true;
   const r = await apiPost('/api/scenarios/load', { name });
   if (r?.ok) { showToast(`Loaded: ${r.name} (${r.count} pins)`); closeModal('scenario-modal'); }
+  else fitOnNextFullState = false;
 }
 
 async function deleteScenario(name) {
-  if (!confirm(`Delete scenario "${name}"?`)) return;
+  const ok = await askConfirm({
+    title: 'DELETE SCENARIO',
+    message: `Delete "${name}"? The saved file is removed.`,
+    confirmLabel: 'DELETE', danger: true,
+  });
+  if (!ok) return;
   await fetch(`/api/scenarios/${encodeURIComponent(name)}`, { method: 'DELETE' });
   await refreshScenarioList();
 }
 
 async function confirmClear() {
-  if (!confirm('Start a new session? All current pins, injects, and log entries will be cleared.')) return;
+  const ok = await askConfirm({
+    title: 'NEW SESSION',
+    message: 'Clear all pins, injects, thresholds and log entries?\n\n'
+           + 'Anything not saved as a scenario is lost.',
+    confirmLabel: 'CLEAR', danger: true,
+  });
+  if (!ok) return;
   await fetch('/api/state/clear', { method: 'POST' });
   closeModal('scenario-modal');
   showToast('New session started');
@@ -634,12 +808,71 @@ async function confirmClear() {
 function togglePanel() {
   panelHidden = !panelHidden;
   document.getElementById('panel').classList.toggle('hidden', panelHidden);
+  document.querySelector('[data-action="togglePanel"]')
+    ?.setAttribute('aria-expanded', String(!panelHidden));
 }
 
 function toggleRightPanel() {
   rightPanelOpen = !rightPanelOpen;
   document.getElementById('right-panel').classList.toggle('open', rightPanelOpen);
-  document.getElementById('tools-btn')?.classList.toggle('btn-active', rightPanelOpen);
+  const btn = document.getElementById('tools-btn');
+  btn?.classList.toggle('btn-active', rightPanelOpen);
+  btn?.setAttribute('aria-expanded', String(rightPanelOpen));
+}
+
+// ── Modal focus ────────────────────────────────────────────────────────────
+// Modals are shown by setting `display` on an overlay, which stops none of the
+// page behind them receiving Tab and never hands focus back to whatever opened
+// them. Both are handled centrally rather than at each of the eight call sites.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), '
+                + 'select:not([disabled]), textarea:not([disabled]), '
+                + '[tabindex]:not([tabindex="-1"])';
+
+let focusBeforeModal = null;
+
+function focusableIn(el) {
+  return [...el.querySelectorAll(FOCUSABLE)].filter(f => f.offsetParent !== null);
+}
+
+/** The topmost open overlay, which is the one Tab has to stay inside. */
+function topModal() {
+  return [...document.querySelectorAll('.modal-overlay')]
+    .filter(el => el.style.display !== 'none')
+    .pop();
+}
+
+function initModalFocus() {
+  // Tracked continuously rather than read when a modal opens: several modals
+  // focus a field of their own first, so by then the answer is already inside.
+  document.addEventListener('focusin', ev => {
+    if (!ev.target.closest('.modal-overlay')) focusBeforeModal = ev.target;
+  });
+
+  document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Tab') return;
+    const modal = topModal();
+    if (!modal) return;
+    const items = focusableIn(modal);
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+    else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+  });
+
+  document.querySelectorAll('.modal-overlay').forEach(el => {
+    new MutationObserver(() => {
+      const shown = el.style.display !== 'none';
+      if (shown === (el.dataset.open === '1')) return;
+      if (shown) {
+        el.dataset.open = '1';
+        // Skip when the modal has already placed focus itself.
+        if (!el.contains(document.activeElement)) focusableIn(el)[0]?.focus();
+      } else {
+        delete el.dataset.open;
+        if (!topModal()) focusBeforeModal?.focus?.();
+      }
+    }).observe(el, { attributes: true, attributeFilter: ['style'] });
+  });
 }
 
 // ── Modal helpers ──────────────────────────────────────────────────────────
@@ -649,6 +882,7 @@ function closeAllModals() {
   ['pin-modal', 'bulk-modal', 'name-modal', 'create-inject-modal', 'scenario-modal', 'timeline-modal', 'shortcuts-modal'].forEach(closeModal);
   resolveNameModal(false);
   resolveBulk(false);
+  resolveAsk(false);
   hideCtx();
   dismissInjectAlert();
 }
@@ -691,11 +925,12 @@ const ACTIONS = {
   exportBriefing, exportLog, geoSearch, hideCtx, loadScenario,
   openInjectModal, openScenarioModal, openShortcuts, openTimeline,
   osmSearch, pinAll, promptMetricValue, resetTimer, resolveBulk,
-  resolveNameModal, saveInject, savePinEdit, saveScenario, setBulkColor,
+  resolveAsk, resolveNameModal, saveInject, savePinEdit, saveScenario, setBulkColor,
   setColor, setMarkupColor, setQueryOrigin, startDraw, toggleCategoryLayer,
   toggleClusters, toggleHeatmap, toggleLog, toggleMapLock, toggleMeasure,
   toggleMetricsPanel, toggleOpsHeatmap, togglePanel, toggleRightPanel,
-  toggleSectorZones, toggleTimer, triggerInject, undoAction
+  toggleLegend, toggleSectorZones, toggleTimer, triggerInject, undoAction,
+  useMapCentreForInject
 };
 
 document.addEventListener('click', ev => {
@@ -764,7 +999,19 @@ function openInjectModal() {
     o.value = p.id; o.textContent = p.name;
     sel.appendChild(o);
   });
+  document.getElementById('inj-spawn-on').checked = false;
+  document.getElementById('inj-spawn-fields').style.display = 'none';
+  document.getElementById('inj-spawn-name').value = '';
+  document.getElementById('inj-spawn-cat').value = 'Asset';
+  document.getElementById('inj-spawn-status').value = 'Under Investigation';
+  useMapCentreForInject();
   document.getElementById('create-inject-modal').style.display = 'flex';
+}
+
+function useMapCentreForInject() {
+  const c = getMap().getCenter();
+  document.getElementById('inj-spawn-lat').value = c.lat.toFixed(5);
+  document.getElementById('inj-spawn-lon').value = c.lng.toFixed(5);
 }
 
 async function saveInject() {
@@ -772,14 +1019,30 @@ async function saveInject() {
   if (!title) { showToast('Title required'); return; }
   const pid    = document.getElementById('inj-target-pin').value || null;
   const status = document.getElementById('inj-target-status').value || null;
-  await apiPost('/api/injects', {
+
+  let newPin = null;
+  if (document.getElementById('inj-spawn-on').checked) {
+    const lat = parseFloat(document.getElementById('inj-spawn-lat').value);
+    const lon = parseFloat(document.getElementById('inj-spawn-lon').value);
+    const spawnName = document.getElementById('inj-spawn-name').value.trim();
+    if (!spawnName) { showToast('Name the asset this inject places'); return; }
+    if (Number.isNaN(lat) || Number.isNaN(lon)) { showToast('Set coordinates for the new asset'); return; }
+    newPin = {
+      name: spawnName, lat, lon,
+      category: document.getElementById('inj-spawn-cat').value,
+      status:   document.getElementById('inj-spawn-status').value,
+    };
+  }
+
+  const r = await apiPost('/api/injects', {
     title,
     description:   document.getElementById('inj-desc').value.trim(),
     severity:      document.getElementById('inj-sev').value,
     target_pid:    pid,
     target_status: status,
-    new_pin: null,
+    new_pin: newPin,
   });
+  if (!r) return;   // apiPost has already surfaced the reason
   closeModal('create-inject-modal');
   showToast('Inject queued');
 }
@@ -813,6 +1076,8 @@ function toggleLog() {
   logOpen = !logOpen;
   document.getElementById('log-panel').classList.toggle('open', logOpen);
   document.getElementById('log-chevron').textContent = logOpen ? '▼' : '▲';
+  document.querySelectorAll('[data-action="toggleLog"]')
+    .forEach(el => el.setAttribute('aria-expanded', String(logOpen)));
   if (logOpen) { refreshLogPinSelect(); scrollLogToBottom(); }
 }
 
@@ -910,7 +1175,13 @@ function refreshBulkPreview() {
 async function clearAllPinsConfirm() {
   const count = Object.keys(getPins()).length;
   if (!count) { showToast('No pins to delete'); return; }
-  if (!confirm(`Delete all ${count} pin(s) and topology links? This cannot be undone.`)) return;
+  const ok = await askConfirm({
+    title: 'DELETE ALL PINS',
+    message: `Delete all ${count} pin(s) and every topology link between them?\n\n`
+           + 'This cannot be undone.',
+    confirmLabel: 'DELETE', danger: true,
+  });
+  if (!ok) return;
   await fetch('/api/pins', { method: 'DELETE' });
 }
 
@@ -920,7 +1191,12 @@ async function applyBulkStatus() {
   const count  = Object.values(getPins()).filter(p => !cat || p.category === cat).length;
   if (!count) { showToast('No matching pins'); return; }
   const label = cat || 'all categories';
-  if (!confirm(`Set ${count} pin(s) in "${label}" → SEC: "${status}"?`)) return;
+  const ok = await askConfirm({
+    title: 'BULK SECURITY STATUS',
+    message: `Set ${count} pin(s) in "${label}" to "${status}"?`,
+    confirmLabel: 'APPLY',
+  });
+  if (!ok) return;
   const r = await apiPost('/api/pins/bulk-status', { category: cat, status });
   if (r?.ok) showToast(`Updated ${r.count} pin(s) → ${status}`);
 }
@@ -931,26 +1207,43 @@ async function applyBulkOpStatus() {
   const count     = Object.values(getPins()).filter(p => !cat || p.category === cat).length;
   if (!count) { showToast('No matching pins'); return; }
   const label = cat || 'all categories';
-  if (!confirm(`Set ${count} pin(s) in "${label}" → OPS: "${op_status}"?`)) return;
+  const ok = await askConfirm({
+    title: 'BULK OPERATIONAL STATUS',
+    message: `Set ${count} pin(s) in "${label}" to "${op_status}"?`,
+    confirmLabel: 'APPLY',
+  });
+  if (!ok) return;
   const r = await apiPost('/api/pins/bulk-status', { category: cat, op_status });
   if (r?.ok) showToast(`Updated ${r.count} pin(s) → ${op_status}`);
+}
+
+/** Hand the browser a generated file to save. */
+function downloadBlob(text, filename, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function stamp() {
+  return new Date().toISOString().slice(0, 19).replace(/:/g, '-');
 }
 
 function exportLog() {
   fetch('/api/log').then(r => r.json()).then(entries => {
     const rows = [['Timestamp','Action','Asset','Notes']];
-    entries.forEach(e => rows.push([
-      e.timestamp,
-      `"${e.action.replace(/"/g,'""')}"`,
-      e.asset_name || '',
-      `"${(e.notes||'').replace(/"/g,'""')}"`,
-    ]));
-    const blob = new Blob([rows.map(r => r.join(',')).join('\n')], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `coppir_log_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
-    a.click();
+    entries.forEach(e => rows.push([e.timestamp, e.action, e.asset_name, e.notes]));
+    const csv = rows.map(r => r.map(csvField).join(',')).join('\n');
+    downloadBlob(csv, `coppir_log_${stamp()}.csv`, 'text/csv');
   });
+}
+
+/** Quote every field. Only two of the four were quoted, so a comma or a
+ *  newline in an asset name shifted every column after it. */
+function csvField(v) {
+  return `"${String(v ?? '').replace(/"/g, '""')}"`;
 }
 
 // ── Network topology ───────────────────────────────────────────────────────
@@ -1443,9 +1736,28 @@ async function exportBriefing() {
 <table><tr><th>TIME</th><th>ACTION</th><th>ASSET</th></tr>${logRows || '<tr><td colspan="3" style="color:#555">No entries.</td></tr>'}</table>
 </body></html>`;
 
+  // Some of pywebview's platform backends have no pop-up support at all, which
+  // is exactly where this matters: the packaged app is how most people run it.
+  // Fall back to saving the file rather than dead-ending on a toast.
   const w = window.open('', '_blank');
-  if (!w) { showToast('Pop-up blocked — allow pop-ups and retry'); return; }
-  w.document.write(html);
-  w.document.close();
-  setTimeout(() => w.print(), 600);
+  if (w) {
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 600);
+    return;
+  }
+  const filename = `coppir_sitrep_${stamp()}.html`;
+  downloadBlob(html, filename, 'text/html');
+  showToast(`Saved ${filename}`);
+}
+
+// ── Start ──────────────────────────────────────────────────────────────────
+// Last in the file on purpose. A module script runs at readyState
+// 'interactive', so this branch is taken during module evaluation -- calling
+// boot() from higher up put every `const` and `let` below it in the temporal
+// dead zone, and anything boot() touched synchronously threw.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
 }

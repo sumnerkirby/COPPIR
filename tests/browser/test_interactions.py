@@ -138,3 +138,87 @@ def test_filtering_dims_non_matching_pins(seeded, app_page):
           .filter(el => parseFloat(getComputedStyle(el).opacity) < 0.5).length
     """)
     assert dimmed == 4, "one of the five seeded pins matches 'Rosslyn'"
+
+
+def test_inject_modal_can_place_an_asset_when_fired(right_panel, api):
+    """inject.new_pin is reachable from the UI.
+
+    The backend and its tests have always supported spawning a pin on trigger,
+    but saveInject hard-coded `new_pin: null`, so nothing short of a hand-made
+    POST could get there.
+    """
+    page = right_panel
+    page.click('button[data-action="openInjectModal"]')
+    page.wait_for_selector("#create-inject-modal", state="visible")
+
+    assert page.locator("#inj-spawn-fields").is_hidden(), "spawn fields start collapsed"
+    page.fill("#inj-title", "Casualty collection point stood up")
+    page.check("#inj-spawn-on")
+    page.wait_for_selector("#inj-spawn-fields", state="visible")
+
+    # Prefilled from the map centre so the common case needs no typing.
+    assert page.input_value("#inj-spawn-lat")
+    assert page.input_value("#inj-spawn-lon")
+
+    page.fill("#inj-spawn-name", "CCP Alpha")
+    page.fill("#inj-spawn-lat", "38.9072")
+    page.fill("#inj-spawn-lon", "-77.0369")
+    page.click('button[data-action="saveInject"]')
+    page.wait_for_selector("#create-inject-modal", state="hidden")
+
+    queued = [i for i in api.get("/api/injects").json()
+              if i["title"] == "Casualty collection point stood up"]
+    assert len(queued) == 1
+    assert queued[0]["new_pin"]["name"] == "CCP Alpha"
+
+    api.post(f"/api/injects/{queued[0]['id']}/trigger").raise_for_status()
+    page.wait_for_function(
+        "async () => (await import('/js/pins.js')).getPins()"
+        " && Object.values((await import('/js/pins.js')).getPins())"
+        ".some(p => p.name === 'CCP Alpha')"
+    )
+
+
+def test_rejected_pin_edit_reports_and_keeps_the_modal_open(app_page, seeded, api):
+    """A save the server refuses must not look like a save that worked.
+
+    apiPut swallowed every error and savePinEdit closed regardless, so blanking
+    a name discarded the edit silently and still pushed an undo entry.
+    """
+    page = app_page
+    page.wait_for_function(
+        "() => document.querySelectorAll('.leaflet-marker-icon').length >= 5")
+    page.locator(".leaflet-marker-icon").first.click()
+    page.wait_for_selector("#pin-modal", state="visible")
+
+    pid = page.input_value("#em-pid")
+    before = api.get("/api/pins").json()[pid]
+
+    page.fill("#em-name", "   ")                 # rejected by the backend
+    page.click('button[data-action="savePinEdit"]')
+
+    page.wait_for_selector("#toast.show")
+    assert "name" in page.text_content("#toast").lower()
+    assert page.locator("#pin-modal").is_visible(), "modal stays open so the edit survives"
+    assert api.get("/api/pins").json()[pid]["name"] == before["name"]
+
+    page.click('[data-action="closeModal"][data-args*="pin-modal"]')
+
+
+def test_accelerators_fire_on_either_modifier(app_page):
+    """Only ctrlKey was checked, so nothing bound fired on the macOS build."""
+    page = app_page
+    for modifier in ("Control", "Meta"):
+        page.keyboard.press(f"{modifier}+l")
+        page.wait_for_selector("#log-panel.open")
+        page.keyboard.press(f"{modifier}+l")
+        page.wait_for_function(
+            "() => !document.getElementById('log-panel').classList.contains('open')")
+
+
+def test_accelerator_hints_follow_the_platform(app_page):
+    """The hints are relabelled from data-accel rather than hard-coded."""
+    label = app_page.text_content('.sc-key[data-accel="S"]')
+    assert label in ("Ctrl+S", "⌘S")
+    assert app_page.get_attribute('[data-action="toggleLog"][data-accel]', "title") \
+        in ("Ctrl+L", "⌘L")

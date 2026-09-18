@@ -199,13 +199,43 @@ than waiting for an assertion to notice.
 | File | Role |
 |---|---|
 | `index.html` | Shell: loading screen, SITREP strip, toolbar, map container, all modals |
-| `app.js` | All application logic (~1900 lines) |
+| `app.js` | Application logic that has not been pulled into a module yet: the websocket dispatcher, the SITREP, scenarios, injects, thresholds, exports |
+| `js/` | One module per concern — see below |
 | `style.css` | All styles — terminal green-on-black theme |
 | `vendor/` | Leaflet, its markercluster/heat/draw plugins, and Font Awesome Solid, committed rather than fetched from a CDN. See `static/vendor/README.md` for versions and licenses. |
 
+`app.js` runs `boot()` from the bottom of the file. A module script executes at
+`readyState` 'interactive', so that branch is taken during module evaluation:
+anything `boot()` reaches synchronously has to be declared above the call, and
+putting the call last is what keeps file order from being load-bearing.
+
+| Module | Role |
+|---|---|
+| `js/api.js` | fetch wrappers. One request helper behind `apiPost`/`apiPut`, which unpacks FastAPI's 422 bodies into a line worth showing |
+| `js/constants.js` | Lookup tables: status colours and scores, sector membership, category icons |
+| `js/dialog.js` | The in-app confirm and prompt, replacing `window.confirm`/`prompt` |
+| `js/edges.js` | Dependency lines between pins |
+| `js/map.js` | Owns the Leaflet instance and the map lock |
+| `js/maptools.js` | Freehand markup and the measure tool — one module because they cancel each other |
+| `js/metrics.js` | The user-defined percentage wheels, kept in `localStorage` |
+| `js/pins.js` | Markers, clustering, filtering and category visibility |
+| `js/timer.js` | The exercise clock |
+| `js/toast.js` | The transient message strip |
+| `js/utils.js` | Pure helpers — no DOM, no state |
+
 ### Map
 
-Leaflet.js with Esri Dark Gray Canvas tiles, in two layers: terrain and labels. The service is only cached to zoom 16, so both layers set `maxNativeZoom: 16` with `maxZoom: 19` and let Leaflet upscale past that. This replaced CartoDB, which now requires an API key and watermarks unauthenticated tiles while still returning HTTP 200. The map is initialized to a US-centered view. Pins are `L.marker` instances with custom `L.divIcon` HTML that encodes security status (fill color) and operational status (border color and style). The icon HTML is constructed from validated server data only; all user-supplied strings are passed through `escHtml()` before insertion.
+Leaflet.js with Esri Dark Gray Canvas tiles, in two layers: terrain and labels. The service is only cached to zoom 16, so both layers set `maxNativeZoom: 16` with `maxZoom: 19` and let Leaflet upscale past that. This replaced CartoDB, which now requires an API key and watermarks unauthenticated tiles while still returning HTTP 200. The map is built on a US-centered view and then frames the pins: on the first
+state that carries any, and on an explicit scenario load. It deliberately does
+not reframe on every `full_state`, which would drag the view back each time the
+websocket reconnected. Pins are `L.marker` instances with custom `L.divIcon` HTML that encodes security status (fill color) and operational status (border color and style). The icon HTML is constructed from validated server data only; all user-supplied strings are passed through `escHtml()` before insertion.
+
+`renderPin` reuses an existing marker and calls `setIcon` rather than replacing
+the layer, so a bulk status change does not tear down and re-insert a DOM node
+per pin. `setIcon` rebuilds the icon element, which is why visibility styling is
+re-applied after it. `syncPins` reconciles the rendered set against an
+authoritative snapshot; `full_state` and `inject_triggered` both go through it
+instead of clearing the map and drawing it again.
 
 Edges are `L.polyline` instances drawn between pin coordinates. They are redrawn whenever either endpoint pin is updated.
 
@@ -226,6 +256,36 @@ The `WHEEL_C` constant (`2 * Math.PI * 19`) is the circumference of the SVG circ
 ### Real-time dispatch
 
 `ws.onmessage` receives all server-pushed events and dispatches them by `msg.type`. `updateSitrep()` and `refreshBulkCategories()` are called after every message. Heat layers are torn down and rebuilt if active, so they stay current.
+
+### Accessibility
+
+Status is encoded twice. Security status is the marker's fill colour **and** a
+glyph badge; operational status is the ring's colour **and** its border style.
+Colour alone was not enough: Compromised, Contained and Under Investigation are
+red, orange and amber, which a red-green colour-blind reader cannot separate.
+The legend is generated from `STATUS_COLORS`, `STATUS_GLYPH` and
+`OP_STATUS_BORDER` rather than written into `index.html`, so it cannot drift
+from what the markers actually draw.
+
+Modals are `role="dialog"` with `aria-modal`, named by their own headers.
+`initModalFocus()` handles all three keyboard concerns centrally, because an
+overlay's `display` is the only signal that a modal opened and there are eight
+of them:
+
+- focus moves into the modal, unless it has already placed focus itself
+- Tab cycles within the topmost open overlay
+- closing the last one returns focus to whatever opened it
+
+The element to return to is tracked as focus moves, not read when a modal
+opens — by then several of them have already focused a field of their own.
+
+Leaflet makes markers tabbable, so each `divIcon` carries an `aria-label` with
+the pin's name, category and both statuses; the icon font and glyph inside are
+`aria-hidden`. Panel toggles carry `aria-expanded`, and the collapsible section
+headers take Enter and Space.
+
+`prefers-reduced-motion: reduce` collapses every animation and transition. All
+of them here are decoration and nothing reads differently without them.
 
 ### Security helpers
 

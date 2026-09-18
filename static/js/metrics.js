@@ -5,6 +5,7 @@
 // of the operational picture.
 
 import { WHEEL_C } from './constants.js';
+import { askValue } from './dialog.js';
 import { escHtml, integrityColor, safeColor } from './utils.js';
 import { showToast } from './toast.js';
 
@@ -67,8 +68,12 @@ export function renameMetric(id, name) {
   if (m) { m.name = name; saveCustomMetrics(); }
 }
 
-export function promptMetricValue(id, current) {
-  const val = prompt('Set value (0–100):', current);
+export async function promptMetricValue(id, current) {
+  const val = await askValue({
+    title: 'SET METRIC',
+    label: 'Value (0–100)',
+    value: String(current),
+  });
   if (val === null) return;
   editMetricValue(id, val);
 }
