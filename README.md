@@ -295,6 +295,25 @@ Scenario files are stored as JSON in a `scenarios/` folder next to the applicati
 
 ---
 
+## Reading the Map
+
+Each pin carries its status twice over, so the picture survives being read
+without colour:
+
+| Dimension | Colour | Second cue |
+|---|---|---|
+| Security status | Marker fill | Glyph badge — ✕ Compromised, ? Under Investigation, ▪ Contained, ◦ Monitored, ✓ Clean |
+| Operational status | Marker ring | Ring style — solid Healthy, dashed Degraded, double Critical, dotted Offline |
+
+**LEGEND** in the toolbar shows the key on the map. It remembers whether you
+left it open.
+
+Markers are reachable by Tab and announce their name, category and both
+statuses. Modals trap Tab and hand focus back when they close. If your system
+asks for reduced motion, the animations are dropped.
+
+---
+
 ## Keyboard Shortcuts
 
 Cmd stands in for Ctrl on macOS. The in-app reference (`?`) shows whichever
