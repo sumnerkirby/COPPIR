@@ -1,13 +1,15 @@
 """Shared fixtures.
 
-The app keeps all its state in module-level dicts in main.py, so every test
-has to start from a clean slate or results depend on execution order. The
-reset fixture is autouse for that reason.
+The app keeps all its state in module-level containers in state.py, so every
+test has to start from a clean slate or results depend on execution order.
+The reset fixture is autouse for that reason.
 """
 import pytest
 from fastapi.testclient import TestClient
 
-import main
+import config
+import state
+from main import app
 
 
 @pytest.fixture(autouse=True)
@@ -17,20 +19,20 @@ def clean_state(tmp_path, monkeypatch):
     Without the SCENARIOS_DIR redirect, tests that save scenarios would write
     into the working copy next to the real ones.
     """
-    for store in (main.pins, main.injects, main.edges):
+    for store in (state.pins, state.injects, state.edges):
         store.clear()
-    for store in (main.thresholds, main.decision_log):
+    for store in (state.thresholds, state.decision_log):
         del store[:]
 
     scenarios = tmp_path / "scenarios"
     scenarios.mkdir()
-    monkeypatch.setattr(main, "SCENARIOS_DIR", scenarios)
+    monkeypatch.setattr(config, "SCENARIOS_DIR", scenarios)
     yield scenarios
 
 
 @pytest.fixture
 def client():
-    with TestClient(main.app) as c:
+    with TestClient(app) as c:
         yield c
 
 
