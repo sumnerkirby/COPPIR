@@ -177,3 +177,29 @@ def test_inject_modal_can_place_an_asset_when_fired(right_panel, api):
         " && Object.values((await import('/js/pins.js')).getPins())"
         ".some(p => p.name === 'CCP Alpha')"
     )
+
+
+def test_rejected_pin_edit_reports_and_keeps_the_modal_open(app_page, seeded, api):
+    """A save the server refuses must not look like a save that worked.
+
+    apiPut swallowed every error and savePinEdit closed regardless, so blanking
+    a name discarded the edit silently and still pushed an undo entry.
+    """
+    page = app_page
+    page.wait_for_function(
+        "() => document.querySelectorAll('.leaflet-marker-icon').length >= 5")
+    page.locator(".leaflet-marker-icon").first.click()
+    page.wait_for_selector("#pin-modal", state="visible")
+
+    pid = page.input_value("#em-pid")
+    before = api.get("/api/pins").json()[pid]
+
+    page.fill("#em-name", "   ")                 # rejected by the backend
+    page.click('button[data-action="savePinEdit"]')
+
+    page.wait_for_selector("#toast.show")
+    assert "name" in page.text_content("#toast").lower()
+    assert page.locator("#pin-modal").is_visible(), "modal stays open so the edit survives"
+    assert api.get("/api/pins").json()[pid]["name"] == before["name"]
+
+    page.click('[data-action="closeModal"][data-args*="pin-modal"]')

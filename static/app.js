@@ -549,13 +549,16 @@ async function deletePinLink(eid, pid) {
 async function savePinEdit() {
   const pid  = document.getElementById('em-pid').value;
   const prev = { ...getPins()[pid] };
-  await apiPut(`/api/pins/${pid}`, {
+  const r = await apiPut(`/api/pins/${pid}`, {
     name:      document.getElementById('em-name').value.trim(),
     status:    document.getElementById('em-status').value,
     op_status: document.getElementById('em-op-status').value,
     pin_color: document.getElementById('em-color').value || null,
     notes:     document.getElementById('em-notes').value,
   });
+  // Closing on a rejected save discarded the edit and left an undo entry that
+  // pointed at a change the server never made.
+  if (!r) return;
   pushUndo({ type: 'pin_update', pid, prev });
   closeModal('pin-modal');
 }
