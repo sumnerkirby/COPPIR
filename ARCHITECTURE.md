@@ -180,6 +180,18 @@ All request bodies are Pydantic v2 models. String fields have `min_length` / `ma
 
 ---
 
+## Tests
+
+| Suite | Runs against | Covers |
+|---|---|---|
+| `tests/` | `TestClient`, in-process | Routes, validation, state transitions, websocket messages |
+| `tests/browser/` | Chromium + live uvicorn | Module loading, event delegation, Leaflet rendering, live updates, layout |
+
+The browser suite exists because the frontend fails quietly. A module that does
+not resolve or a handler that throws leaves a page that renders and looks
+almost correct, so those fixtures fail a test on any uncaught JS error rather
+than waiting for an assertion to notice.
+
 ## Frontend (`static/`)
 
 **Runtime:** plain ES2020 JavaScript, no build step or bundler. Third-party libraries are vendored under `static/vendor/`, so the frontend loads with no network access and a PyInstaller build is self-contained.
