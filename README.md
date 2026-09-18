@@ -151,7 +151,7 @@ The strip across the top of the screen provides a live summary of the operationa
 | Government | Government Buildings |
 | Power | Power Plants |
 | Emergency | Fire Stations, Police Stations |
-| Civilian | Water Systems, Transportation Hubs, Telecom Infrastructure, Universities |
+| Civilian | Water Systems, Transportation Hubs, Telecom Infrastructure, Universities, Data Centers |
 | Financial | Banks |
 
 Counts and wheels update automatically whenever any pin changes. During large imports they are debounced so the interface stays responsive.
@@ -297,12 +297,16 @@ Scenario files are stored as JSON in a `scenarios/` folder next to the applicati
 
 ## Keyboard Shortcuts
 
+Cmd stands in for Ctrl on macOS. The in-app reference (`?`) shows whichever
+one this machine uses.
+
 | Shortcut | Action |
 |---|---|
-| Ctrl+S | Open scenario save/load modal |
-| Ctrl+L | Toggle decision log panel |
-| Ctrl+Z | Undo last pin placement |
-| Escape | Cancel active drawing, finish measure, or close modal |
+| Ctrl/Cmd+S | Open scenario save/load modal |
+| Ctrl/Cmd+L | Toggle decision log panel |
+| Ctrl/Cmd+Z | Undo last pin placement |
+| Enter (in Find Asset) | Zoom the map to whatever still matches the filter |
+| Escape | Cancel active drawing, finish measure, close a modal, or dismiss a confirmation |
 | ? | Show keyboard shortcut reference |
 
 ---
