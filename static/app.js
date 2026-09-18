@@ -1,3 +1,13 @@
+import { createMap, getMap, toggleMapLock } from './js/map.js';
+import { resetTimer, toggleTimer } from './js/timer.js';
+import {
+  addMetric, adjustMetric, deleteMetric, loadCustomMetrics, promptMetricValue,
+  renameMetric, toggleMetricsPanel,
+} from './js/metrics.js';
+import {
+  addMeasurePoint, cancelActiveDraw, clearAllMarkup, clearMeasure, finishMeasure,
+  initMapTools, isMeasuring, setMarkupColor, startDraw, toggleMeasure,
+} from './js/maptools.js';
 import {
   CATEGORY_ICONS, OPS_COLORS, OP_STATUS_BORDER, SECTORS, SECTOR_ZONE_COLORS,
   STATUS_COLORS, STATUS_SCORE, WHEEL_C,
@@ -14,7 +24,6 @@ import { apiPost, apiPut } from './js/api.js';
 // 19 matches the r attribute on the SVG circles used for sector and custom metric wheels.
 
 // ── State ──────────────────────────────────────────────────────────────────
-let map;
 let pins       = {};
 let pinMarkers = {};
 let edges      = {};
@@ -46,17 +55,6 @@ let rightPanelOpen   = false;
 let logOpen     = false;
 let injectAlertTimer = null;
 let searchCircle     = null;
-let mapLocked        = false;
-let customMetrics    = [];
-let metricsPanelOpen = false;
-let drawnItems       = null;
-let activeDrawer     = null;
-let markupColor      = '#FF3333';
-let measureMode      = false;
-let measurePts       = [];
-let measureLayer     = null;
-let measureMarkers   = [];
-let _lastMeasureClick = 0; // timestamp used to ignore the second click of a double-click during measurement
 
 // ── Init ───────────────────────────────────────────────────────────────────
 function boot() {
@@ -98,47 +96,21 @@ function initDomHandlers() {
 }
 
 function initMap() {
-  map = L.map('map', { zoomControl: true }).setView([39.5, -98.35], 5);
+  // The map module builds the instance; the handlers below belong to the app,
+  // which is why they are attached here rather than in that module.
+  createMap();
 
-  // Esri splits this basemap into terrain and labels, so both go on. Note the
-  // tile path is {z}/{y}/{x}, not the usual {z}/{x}/{y}.
-  // Only cached to z16; past that Esri serves a light "no data" tile that
-  // wrecks the dark theme, so cap requests there and let Leaflet upscale.
-  const ESRI_CANVAS = 'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas';
-  const esriOpts = { maxNativeZoom: 16, maxZoom: 19 };
+  initMapTools();
 
-  L.tileLayer(`${ESRI_CANVAS}/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
-    ...esriOpts,
-    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; '
-               + 'Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> '
-               + 'contributors, and the GIS user community',
-  }).addTo(map);
-
-  L.tileLayer(`${ESRI_CANVAS}/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}`, esriOpts).addTo(map);
-
-  L.control.scale({ imperial: true, metric: false, position: 'bottomright' }).addTo(map);
-
-  drawnItems = new L.FeatureGroup();
-  map.addLayer(drawnItems);
-  map.on('draw:created', e => {
-    drawnItems.addLayer(e.layer);
-    activeDrawer = null;
-    document.querySelectorAll('.markup-btn').forEach(b => b.classList.remove('btn-active'));
-  });
-  map.on('draw:drawstop', () => {
-    activeDrawer = null;
-    document.querySelectorAll('.markup-btn').forEach(b => b.classList.remove('btn-active'));
-  });
-
-  map.on('contextmenu', onRightClick);
-  map.on('click', e => {
+  getMap().on('contextmenu', onRightClick);
+  getMap().on('click', e => {
     hideCtx();
-    if (measureMode) addMeasurePoint(e.latlng);
+    if (isMeasuring()) addMeasurePoint(e.latlng);
   });
-  map.on('dblclick', e => {
-    if (measureMode) { L.DomEvent.stop(e); finishMeasure(); }
+  getMap().on('dblclick', e => {
+    if (isMeasuring()) { L.DomEvent.stop(e); finishMeasure(); }
   });
-  map.on('zoomend', updateZoneLabelVisibility);
+  getMap().on('zoomend', updateZoneLabelVisibility);
 }
 
 function initClock() {
@@ -158,8 +130,8 @@ function initKeyboard() {
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoAction(); }
     if (e.key === '?' && !e.target.matches('input,textarea,select')) openShortcuts();
     if (e.key === 'Escape') {
-      if (activeDrawer) { activeDrawer.disable(); activeDrawer = null; }
-      else if (measureMode) { finishMeasure(); }
+      if (cancelActiveDraw()) { /* a part-drawn shape was discarded */ }
+      else if (isMeasuring()) { finishMeasure(); }
       else { closeAllModals(); }
     }
   });
@@ -260,8 +232,8 @@ function connectWS() {
     }
     updateSitrep();
     refreshBulkCategories();
-    if (heatLayer)    { map.removeLayer(heatLayer);    heatLayer    = null; toggleHeatmap(); }
-    if (opsHeatLayer) { map.removeLayer(opsHeatLayer); opsHeatLayer = null; toggleOpsHeatmap(); }
+    if (heatLayer)    { getMap().removeLayer(heatLayer);    heatLayer    = null; toggleHeatmap(); }
+    if (opsHeatLayer) { getMap().removeLayer(opsHeatLayer); opsHeatLayer = null; toggleOpsHeatmap(); }
   };
 
   ws.onclose = () => {
@@ -277,7 +249,7 @@ function renderPin(pin) {
   if (pinMarkers[pin.id]) {
     const old = pinMarkers[pin.id];
     if (clusterEnabled && clusterGroup) clusterGroup.removeLayer(old);
-    else map.removeLayer(old);
+    else getMap().removeLayer(old);
   }
   pins[pin.id] = pin;
 
@@ -290,7 +262,7 @@ function renderPin(pin) {
     .on('click', () => openPinModal(pin.id));
 
   if (clusterEnabled && clusterGroup) clusterGroup.addLayer(marker);
-  else marker.addTo(map);
+  else marker.addTo(getMap());
   pinMarkers[pin.id] = marker;
   applyPinVisibility(pin.id);
 }
@@ -311,7 +283,7 @@ function makePinIcon(pin) {
 function removePin(pid) {
   if (pinMarkers[pid]) {
     if (clusterEnabled && clusterGroup) clusterGroup.removeLayer(pinMarkers[pid]);
-    else map.removeLayer(pinMarkers[pid]);
+    else getMap().removeLayer(pinMarkers[pid]);
     delete pinMarkers[pid];
   }
   delete pins[pid];
@@ -324,7 +296,7 @@ function removePin(pid) {
 
 function clearAllPins() {
   Object.values(pinMarkers).forEach(m => {
-    try { map.removeLayer(m); } catch {}
+    try { getMap().removeLayer(m); } catch {}
     try { if (clusterGroup) clusterGroup.removeLayer(m); } catch {}
   });
   if (clusterGroup) clusterGroup.clearLayers();
@@ -445,14 +417,14 @@ async function geoSearch() {
   if (!q) return;
   const results = await apiPost('/api/geocode', { query: q });
   if (!results?.length) { showToast('Location not found'); return; }
-  map.setView([parseFloat(results[0].lat), parseFloat(results[0].lon)], 13);
+  getMap().setView([parseFloat(results[0].lat), parseFloat(results[0].lon)], 13);
 }
 
 // ── OSM search ─────────────────────────────────────────────────────────────
 async function osmSearch() {
   const cat    = document.getElementById('osm-cat').value;
   const radius = parseFloat(document.getElementById('osm-radius').value) || 15;
-  const center = queryOrigin || map.getCenter();
+  const center = queryOrigin || getMap().getCenter();
   const statusEl  = document.getElementById('search-status');
   const loadingEl = document.getElementById('query-loading');
   const btn = document.getElementById('query-btn');
@@ -467,7 +439,7 @@ async function osmSearch() {
     color: '#00ff41', weight: 1,
     fillColor: '#00ff41', fillOpacity: 0.04,
     dashArray: '5 6', interactive: false,
-  }).addTo(map);
+  }).addTo(getMap());
   btn.textContent = 'QUERYING…';
   btn.disabled = true;
 
@@ -491,7 +463,7 @@ async function osmSearch() {
   results.forEach(r => {
     const m = L.circleMarker([r.lat, r.lon], {
       radius: 6, color: '#6699ff', fillColor: '#3355cc', fillOpacity: 0.8, weight: 1,
-    }).addTo(map).bindTooltip(r.name);
+    }).addTo(getMap()).bindTooltip(r.name);
     searchMarkers.push(m);
 
     const li = document.createElement('li');
@@ -503,10 +475,10 @@ async function osmSearch() {
 }
 
 function clearSearch() {
-  searchMarkers.forEach(m => map.removeLayer(m));
+  searchMarkers.forEach(m => getMap().removeLayer(m));
   searchMarkers = [];
   searchResults = [];
-  if (searchCircle) { map.removeLayer(searchCircle); searchCircle = null; }
+  if (searchCircle) { getMap().removeLayer(searchCircle); searchCircle = null; }
   document.getElementById('search-results').innerHTML = '';
   document.getElementById('pin-all-row').style.display = 'none';
   document.getElementById('search-status').textContent = '';
@@ -747,216 +719,15 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 
 // ── API helpers ────────────────────────────────────────────────────────────
 // ── Map Lock ───────────────────────────────────────────────────────────────
-function toggleMapLock() {
-  mapLocked = !mapLocked;
-  if (mapLocked) {
-    map.dragging.disable();
-    map.scrollWheelZoom.disable();
-    map.boxZoom.disable();
-    map.keyboard.disable();
-  } else {
-    map.dragging.enable();
-    map.scrollWheelZoom.enable();
-    map.boxZoom.enable();
-    map.keyboard.enable();
-  }
-  const btn = document.getElementById('map-lock-btn');
-  btn?.classList.toggle('btn-active', mapLocked);
-  if (btn) btn.textContent = mapLocked ? 'LOCKED' : 'LOCK MAP';
-  showToast(mapLocked ? 'Map locked' : 'Map unlocked');
-}
 
 // ── Custom Metrics ─────────────────────────────────────────────────────────
-function loadCustomMetrics() {
-  try { customMetrics = JSON.parse(localStorage.getItem('coppir_metrics') || '[]'); } catch { customMetrics = []; }
-  renderMetrics();
-}
 
-function saveCustomMetrics() {
-  localStorage.setItem('coppir_metrics', JSON.stringify(customMetrics));
-}
-
-function toggleMetricsPanel() {
-  metricsPanelOpen = !metricsPanelOpen;
-  document.getElementById('metrics-panel').classList.toggle('open', metricsPanelOpen);
-  document.getElementById('metrics-btn')?.classList.toggle('btn-active', metricsPanelOpen);
-}
-
-function addMetric() {
-  const name = document.getElementById('met-name').value.trim();
-  const val  = document.getElementById('met-val').value.trim();
-  if (!name) { showToast('Enter a metric name'); return; }
-  customMetrics.push({ id: Date.now().toString(36), name, value: val || '0' });
-  saveCustomMetrics();
-  renderMetrics();
-  document.getElementById('met-name').value = '';
-  document.getElementById('met-val').value  = '';
-}
-
-function deleteMetric(id) {
-  customMetrics = customMetrics.filter(m => m.id !== id);
-  saveCustomMetrics();
-  renderMetrics();
-}
-
-function adjustMetric(id, delta) {
-  const m = customMetrics.find(m => m.id === id);
-  if (!m) return;
-  const n = parseFloat(m.value) || 0;
-  m.value = String(Math.max(0, Math.min(100, Math.round(n + delta))));
-  saveCustomMetrics();
-  renderMetrics();
-}
-
-function editMetricValue(id, val) {
-  const m = customMetrics.find(m => m.id === id);
-  if (!m) return;
-  const n = parseFloat(val);
-  m.value = isNaN(n) ? '0' : String(Math.max(0, Math.min(100, Math.round(n))));
-  saveCustomMetrics();
-  renderMetrics();
-}
-
-function renameMetric(id, name) {
-  if (!name) return;
-  const m = customMetrics.find(m => m.id === id);
-  if (m) { m.name = name; saveCustomMetrics(); }
-}
-
-function promptMetricValue(id, current) {
-  const val = prompt('Set value (0–100):', current);
-  if (val === null) return;
-  editMetricValue(id, val);
-}
-
-function renderMetrics() {
-  const el = document.getElementById('metrics-list');
-  if (!el) return;
-  if (!customMetrics.length) {
-    el.innerHTML = '<span class="dim-txt" style="font-size:10px;padding:4px 0">No metrics defined. Add one below.</span>';
-    return;
-  }
-  el.innerHTML = customMetrics.map(m => {
-    const pct  = Math.max(0, Math.min(100, parseFloat(m.value) || 0));
-    const col  = safeColor(integrityColor(pct));
-    const dash = (pct / 100) * WHEEL_C;
-    return `<div class="metric-wheel-wrap">
-      <svg class="wheel-svg" viewBox="0 0 50 50" data-action="promptMetricValue" data-args="${escHtml(JSON.stringify([m.id, Math.round(pct)]))}" style="cursor:pointer" title="Click to set value">
-        <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
-        <circle cx="25" cy="25" r="19" fill="none" stroke="${col}" stroke-width="7"
-          stroke-dasharray="${dash} ${WHEEL_C}" transform="rotate(-90 25 25)"
-          style="stroke-linecap:round;transition:stroke-dasharray 0.4s ease,stroke 0.4s ease"/>
-        <text x="25" y="30" text-anchor="middle" style="fill:${col};font-family:var(--font);font-size:9px;font-weight:bold">${Math.round(pct)}%</text>
-      </svg>
-      <div class="metric-wheel-name" contenteditable="true"
-           data-rename-metric="${escHtml(m.id)}"
-           spellcheck="false">${escHtml(m.name)}</div>
-      <div class="metric-wheel-controls">
-        <button class="btn btn-dim metric-adj" data-action="adjustMetric" data-args="${escHtml(JSON.stringify([m.id, -5]))}">−</button>
-        <button class="btn btn-dim metric-adj" data-action="adjustMetric" data-args="${escHtml(JSON.stringify([m.id, 5]))}">+</button>
-        <button class="btn btn-danger metric-del" data-action="deleteMetric" data-args="${escHtml(JSON.stringify([m.id]))}">×</button>
-      </div>
-    </div>`;
-  }).join('');
-}
 
 // ── Map Markup ─────────────────────────────────────────────────────────────
-function startDraw(mode, btnId) {
-  if (measureMode) toggleMeasure();
-  if (activeDrawer) { activeDrawer.disable(); return; }
 
-  const fill = { color: markupColor, weight: 2, fillColor: markupColor, fillOpacity: 0.15 };
-  const line = { color: markupColor, weight: 2 };
-  const drawers = {
-    polyline:  () => new L.Draw.Polyline(map,  { shapeOptions: line }),
-    polygon:   () => new L.Draw.Polygon(map,   { shapeOptions: fill }),
-    rectangle: () => new L.Draw.Rectangle(map, { shapeOptions: fill }),
-    circle:    () => new L.Draw.Circle(map,    { shapeOptions: fill }),
-  };
-  const drawer = drawers[mode]?.();
-  if (!drawer) return;
-  drawer.enable();
-  activeDrawer = drawer;
-  document.getElementById(btnId)?.classList.add('btn-active');
-}
-
-function setMarkupColor(hex) {
-  markupColor = hex;
-  document.querySelectorAll('.markup-swatch').forEach(s => {
-    s.classList.toggle('swatch-active', s.dataset.color === hex);
-  });
-  const picker = document.getElementById('markup-color-picker');
-  if (picker && !picker.matches(':focus')) picker.value = hex;
-}
-
-function clearAllMarkup() {
-  if (drawnItems) drawnItems.clearLayers();
-  clearMeasure();
-}
 
 // ── Measure Tool ───────────────────────────────────────────────────────────
-function toggleMeasure() {
-  if (activeDrawer) { activeDrawer.disable(); }
-  measureMode = !measureMode;
-  const btn = document.getElementById('measure-btn');
-  if (measureMode) {
-    btn?.classList.add('btn-active');
-    map.getContainer().style.cursor = 'crosshair';
-    map.doubleClickZoom.disable();
-    document.getElementById('measure-result').textContent = 'Click points · Double-click or Esc to finish';
-  } else {
-    finishMeasure();
-  }
-}
 
-function addMeasurePoint(latlng) {
-  const now = Date.now();
-  if (now - _lastMeasureClick < 250) return;
-  _lastMeasureClick = now;
-
-  measurePts.push(latlng);
-  const dot = L.circleMarker(latlng, {
-    radius: 4, color: '#FFDD00', fillColor: '#FFDD00',
-    fillOpacity: 1, weight: 1, interactive: false,
-  }).addTo(map);
-  measureMarkers.push(dot);
-
-  if (measureLayer) { map.removeLayer(measureLayer); measureLayer = null; }
-  if (measurePts.length >= 2) {
-    measureLayer = L.polyline(measurePts, {
-      color: '#FFDD00', weight: 2, dashArray: '5 4', interactive: false,
-    }).addTo(map);
-    document.getElementById('measure-result').textContent = formatDist(totalMeasureDist());
-  }
-}
-
-function finishMeasure() {
-  measureMode = false;
-  map.getContainer().style.cursor = '';
-  map.doubleClickZoom.enable();
-  document.getElementById('measure-btn')?.classList.remove('btn-active');
-  if (measurePts.length >= 2) {
-    document.getElementById('measure-result').textContent = `Total: ${formatDist(totalMeasureDist())}`;
-  } else {
-    clearMeasure();
-  }
-}
-
-function clearMeasure() {
-  if (measureLayer) { map.removeLayer(measureLayer); measureLayer = null; }
-  measureMarkers.forEach(m => map.removeLayer(m));
-  measureMarkers = [];
-  measurePts = [];
-  const el = document.getElementById('measure-result');
-  if (el) el.textContent = '';
-}
-
-function totalMeasureDist() {
-  let total = 0;
-  for (let i = 1; i < measurePts.length; i++)
-    total += haversineM(measurePts[i-1].lat, measurePts[i-1].lng, measurePts[i].lat, measurePts[i].lng);
-  return total;
-}
 
 // ── Declarative event wiring ───────────────────────────────────────────────
 // Elements opt in with data-action, plus data-args when the handler takes
@@ -1240,7 +1011,7 @@ function exportLog() {
 
 // ── Network topology ───────────────────────────────────────────────────────
 function renderEdge(edge) {
-  if (edgeLayers[edge.id]) { map.removeLayer(edgeLayers[edge.id]); }
+  if (edgeLayers[edge.id]) { getMap().removeLayer(edgeLayers[edge.id]); }
   edges[edge.id] = edge;
   const fromPin = pins[edge.from_pid];
   const toPin   = pins[edge.to_pid];
@@ -1249,7 +1020,7 @@ function renderEdge(edge) {
   const line = L.polyline([[fromPin.lat, fromPin.lon], [toPin.lat, toPin.lon]], {
     color: '#00ff41', weight: 1.5, opacity: edgesVisible ? 0.7 : 0,
     dashArray: '6 4', interactive: edgesVisible,
-  }).addTo(map);
+  }).addTo(getMap());
 
   line.bindTooltip(
     `<div style="font-size:10px">${fromPin.name} <b>→</b> ${toPin.name}${edge.label ? '<br><span style="opacity:.7">' + edge.label + '</span>' : ''}</div>`,
@@ -1266,12 +1037,12 @@ function renderEdge(edge) {
 }
 
 function removeEdge(eid) {
-  if (edgeLayers[eid]) { map.removeLayer(edgeLayers[eid]); delete edgeLayers[eid]; }
+  if (edgeLayers[eid]) { getMap().removeLayer(edgeLayers[eid]); delete edgeLayers[eid]; }
   delete edges[eid];
 }
 
 function clearAllEdges() {
-  Object.keys(edgeLayers).forEach(eid => { map.removeLayer(edgeLayers[eid]); });
+  Object.keys(edgeLayers).forEach(eid => { getMap().removeLayer(edgeLayers[eid]); });
   edgeLayers = {};
   edges = {};
 }
@@ -1408,50 +1179,7 @@ function clearThresholdBadges() {
 }
 
 // ── Exercise timer ─────────────────────────────────────────────────────────
-let timerElapsed  = 0;
-let timerRunning  = false;
-let timerInterval = null;
-let timerStartRef = null;
 
-function toggleTimer() {
-  timerRunning ? pauseTimer() : startTimer();
-}
-
-function startTimer() {
-  timerRunning  = true;
-  timerStartRef = Date.now() - timerElapsed;
-  timerInterval = setInterval(tickTimer, 500);
-  document.getElementById('timer-btn').textContent = 'PAUSE';
-  document.getElementById('timer-display').classList.add('timer-running');
-  document.getElementById('timer-display').classList.remove('timer-paused');
-}
-
-function pauseTimer() {
-  timerRunning  = false;
-  timerElapsed  = Date.now() - timerStartRef;
-  clearInterval(timerInterval);
-  document.getElementById('timer-btn').textContent = 'RESUME';
-  document.getElementById('timer-display').classList.remove('timer-running');
-  document.getElementById('timer-display').classList.add('timer-paused');
-}
-
-function resetTimer() {
-  clearInterval(timerInterval);
-  timerRunning = false; timerElapsed = 0; timerStartRef = null;
-  const d = document.getElementById('timer-display');
-  d.textContent = '00:00:00';
-  d.classList.remove('timer-running', 'timer-paused');
-  document.getElementById('timer-btn').textContent = 'START';
-}
-
-function tickTimer() {
-  const ms = Date.now() - timerStartRef;
-  const h  = Math.floor(ms / 3600000);
-  const m  = Math.floor((ms % 3600000) / 60000);
-  const s  = Math.floor((ms % 60000) / 1000);
-  document.getElementById('timer-display').textContent =
-    `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
 
 // ── Undo ───────────────────────────────────────────────────────────────────
 function pushUndo(action) {
@@ -1565,7 +1293,7 @@ function openShortcuts() {
 // ── Query origin lock ──────────────────────────────────────────────────────
 function setQueryOrigin() {
   clearQueryOrigin(false);
-  queryOrigin = map.getCenter();
+  queryOrigin = getMap().getCenter();
   queryOriginMarker = L.marker([queryOrigin.lat, queryOrigin.lng], {
     icon: L.divIcon({
       className: '',
@@ -1574,7 +1302,7 @@ function setQueryOrigin() {
     }),
     zIndexOffset: 1000,
     interactive: false,
-  }).addTo(map).bindTooltip('Query origin (locked)');
+  }).addTo(getMap()).bindTooltip('Query origin (locked)');
 
   document.getElementById('origin-coords').textContent =
     `${queryOrigin.lat.toFixed(4)}, ${queryOrigin.lng.toFixed(4)}`;
@@ -1584,7 +1312,7 @@ function setQueryOrigin() {
 }
 
 function clearQueryOrigin(toast = true) {
-  if (queryOriginMarker) { map.removeLayer(queryOriginMarker); queryOriginMarker = null; }
+  if (queryOriginMarker) { getMap().removeLayer(queryOriginMarker); queryOriginMarker = null; }
   queryOrigin = null;
   document.getElementById('origin-info').style.display = 'none';
   document.getElementById('set-origin-btn').textContent = 'PIN ORIGIN';
@@ -1595,7 +1323,7 @@ function clearQueryOrigin(toast = true) {
 function toggleHeatmap() {
   const btn = document.getElementById('heatmap-btn');
   if (heatLayer) {
-    map.removeLayer(heatLayer);
+    getMap().removeLayer(heatLayer);
     heatLayer = null;
     btn?.classList.remove('btn-active');
     return;
@@ -1603,8 +1331,8 @@ function toggleHeatmap() {
   const all = Object.values(pins);
   if (!all.length) { showToast('No pins to visualize'); return; }
 
-  if (!map.getPane('healthPane')) {
-    const pane = map.createPane('healthPane');
+  if (!getMap().getPane('healthPane')) {
+    const pane = getMap().createPane('healthPane');
     pane.style.zIndex = 350;
     pane.style.filter = 'blur(14px)';
   }
@@ -1622,7 +1350,7 @@ function toggleHeatmap() {
       pane: 'healthPane',
     }).addTo(heatLayer);
   });
-  heatLayer.addTo(map);
+  heatLayer.addTo(getMap());
   btn?.classList.add('btn-active');
 }
 
@@ -1631,7 +1359,7 @@ function toggleHeatmap() {
 function toggleOpsHeatmap() {
   const btn = document.getElementById('ops-heatmap-btn');
   if (opsHeatLayer) {
-    map.removeLayer(opsHeatLayer);
+    getMap().removeLayer(opsHeatLayer);
     opsHeatLayer = null;
     btn?.classList.remove('btn-active');
     return;
@@ -1639,8 +1367,8 @@ function toggleOpsHeatmap() {
   const all = Object.values(pins);
   if (!all.length) { showToast('No pins to visualize'); return; }
 
-  if (!map.getPane('opsPane')) {
-    const pane = map.createPane('opsPane');
+  if (!getMap().getPane('opsPane')) {
+    const pane = getMap().createPane('opsPane');
     pane.style.zIndex = 351;
     pane.style.filter = 'blur(14px)';
   }
@@ -1657,7 +1385,7 @@ function toggleOpsHeatmap() {
       pane: 'opsPane',
     }).addTo(opsHeatLayer);
   });
-  opsHeatLayer.addTo(map);
+  opsHeatLayer.addTo(getMap());
   btn?.classList.add('btn-active');
 }
 
@@ -1677,13 +1405,13 @@ function toggleClusters() {
           iconSize: [36, 36], iconAnchor: [18, 18],
         }),
       });
-      map.addLayer(clusterGroup);
+      getMap().addLayer(clusterGroup);
     }
-    Object.values(pinMarkers).forEach(m => { map.removeLayer(m); clusterGroup.addLayer(m); });
+    Object.values(pinMarkers).forEach(m => { getMap().removeLayer(m); clusterGroup.addLayer(m); });
   } else {
     if (clusterGroup) {
-      Object.values(pinMarkers).forEach(m => { clusterGroup.removeLayer(m); m.addTo(map); });
-      map.removeLayer(clusterGroup);
+      Object.values(pinMarkers).forEach(m => { clusterGroup.removeLayer(m); m.addTo(getMap()); });
+      getMap().removeLayer(clusterGroup);
       clusterGroup = null;
     }
   }
@@ -1694,7 +1422,7 @@ function toggleSectorZones() {
   sectorZonesVisible = !sectorZonesVisible;
   document.getElementById('zones-btn')?.classList.toggle('btn-active', sectorZonesVisible);
   if (!sectorZonesVisible) {
-    if (sectorZoneLayer) { map.removeLayer(sectorZoneLayer); sectorZoneLayer = null; }
+    if (sectorZoneLayer) { getMap().removeLayer(sectorZoneLayer); sectorZoneLayer = null; }
     zoneLabelMarkers = [];
   } else {
     updateSectorZones();
@@ -1703,7 +1431,7 @@ function toggleSectorZones() {
 
 function updateZoneLabelVisibility() {
   // Labels are legible at country/state/metro zoom; hide at street level (zoom > 11)
-  const show = map.getZoom() <= 11;
+  const show = getMap().getZoom() <= 11;
   zoneLabelMarkers.forEach(m => {
     const el = m.getElement?.();
     if (!el) return;
@@ -1728,7 +1456,7 @@ function clusterPinsByDistance(pinList, maxMeters) {
 
 function updateSectorZones() {
   if (!sectorZonesVisible) return;
-  if (sectorZoneLayer) { map.removeLayer(sectorZoneLayer); sectorZoneLayer = null; }
+  if (sectorZoneLayer) { getMap().removeLayer(sectorZoneLayer); sectorZoneLayer = null; }
   sectorZoneLayer = L.layerGroup();
   zoneLabelMarkers = [];
   const all = Object.values(pins);
@@ -1800,7 +1528,7 @@ function updateSectorZones() {
     });
   });
 
-  sectorZoneLayer.addTo(map);
+  sectorZoneLayer.addTo(getMap());
   updateZoneLabelVisibility();
 }
 
