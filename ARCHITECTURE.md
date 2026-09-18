@@ -51,6 +51,19 @@ When packaged by PyInstaller, `sys.executable` points to the bundle itself rathe
 
 **Runtime:** uvicorn (ASGI), FastAPI framework, Python 3.10+
 
+| Module | Role |
+|---|---|
+| `main.py` | Assembles the app: middleware, routers, static mount. Nothing else. |
+| `config.py` | Filesystem paths, Overpass mirrors and tag filters |
+| `state.py` | The in-memory stores and the `broadcast()` helper |
+| `models.py` | Pydantic request models and the allowlists they validate against |
+| `routers/` | One module per resource: pins, edges, injects, log, scenarios, thresholds, osm, ws |
+
+Routers import the state containers by name and mutate them in place. Nothing
+rebinds them, which is what keeps every importer pointing at the same objects.
+`config.SCENARIOS_DIR` is read through the module rather than imported by value,
+so it can be redirected at runtime (the test suite points it at a temp dir).
+
 ### State
 
 All application state is held in module-level dictionaries and lists. There is no ORM or database.
