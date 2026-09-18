@@ -91,14 +91,23 @@ export function clearAllPins() {
   for (const k of Object.keys(pins)) delete pins[k];
 }
 
+function matchesFilter(pin) {
+  if (!filterQuery) return true;
+  return pin.name.toLowerCase().includes(filterQuery)
+      || pin.category.toLowerCase().includes(filterQuery);
+}
+
+/** The pins actually on show: matching the filter, in a visible category. */
+export function getVisiblePins() {
+  return Object.values(pins).filter(p => !hiddenCategories.has(p.category) && matchesFilter(p));
+}
+
 export function applyPinVisibility(pid) {
   const marker = pinMarkers[pid];
   const pin    = pins[pid];
   if (!marker || !pin) return;
   const catHidden  = hiddenCategories.has(pin.category);
-  const filterMiss = !!filterQuery
-    && !pin.name.toLowerCase().includes(filterQuery)
-    && !pin.category.toLowerCase().includes(filterQuery);
+  const filterMiss = !matchesFilter(pin);
   const opacity = catHidden ? 0 : filterMiss ? 0.1 : 1;
   marker.setOpacity(opacity);
   const el = marker.getElement?.();
@@ -110,10 +119,7 @@ export function filterPins(query) {
   let matched = 0;
   const total = Object.keys(pins).length;
   Object.values(pins).forEach(pin => {
-    const visible = !filterQuery
-      || pin.name.toLowerCase().includes(filterQuery)
-      || pin.category.toLowerCase().includes(filterQuery);
-    if (visible && !hiddenCategories.has(pin.category)) matched++;
+    if (matchesFilter(pin) && !hiddenCategories.has(pin.category)) matched++;
     applyPinVisibility(pin.id);
   });
   const statusEl = document.getElementById('filter-status');

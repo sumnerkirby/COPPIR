@@ -1,7 +1,7 @@
 import { createMap, getMap, toggleMapLock } from './js/map.js';
 import {
-  clearAllPins, clearFilter, filterPins, getPin, getPins, removePin, renderPin,
-  renderCategoryToggles, setPinClickHandler, toggleCategoryLayer, toggleClusters,
+  clearAllPins, clearFilter, filterPins, getPin, getPins, getVisiblePins, removePin,
+  renderPin, renderCategoryToggles, setPinClickHandler, toggleCategoryLayer, toggleClusters,
 } from './js/pins.js';
 import {
   clearAllEdges, getEdges, removeEdgesTouching, renderEdge,
@@ -53,6 +53,11 @@ let rightPanelOpen   = false;
 let logOpen     = false;
 let injectAlertTimer = null;
 let searchCircle     = null;
+// The map reframes itself on the first full_state that carries pins, and on an
+// explicit scenario load. Doing it on every full_state would yank the view back
+// from wherever the user was looking each time the websocket reconnected.
+let hasFitted           = false;
+let fitOnNextFullState  = false;
 
 // ── Init ───────────────────────────────────────────────────────────────────
 function boot() {
@@ -85,6 +90,13 @@ function initDomHandlers() {
     .addEventListener('change', ev => setMarkupColor(ev.target.value));
   document.getElementById('pin-filter-inp')
     .addEventListener('input', ev => filterPins(ev.target.value));
+  // Filtering dims the misses but leaves the view where it was, so a match
+  // off-screen stayed lost. Enter goes to whatever is still showing.
+  document.getElementById('pin-filter-inp')
+    .addEventListener('keydown', ev => {
+      if (ev.key !== 'Enter') return;
+      if (!fitToPins(getVisiblePins())) showToast('Nothing matches that filter');
+    });
   document.getElementById('inj-spawn-on')
     .addEventListener('change', ev => {
       document.getElementById('inj-spawn-fields').style.display = ev.target.checked ? 'block' : 'none';
@@ -185,6 +197,10 @@ function connectWS() {
       if (msg.thresholds) { thresholds = msg.thresholds; renderThresholdList(); }
       if (msg.injects) { clearInjectList(); msg.injects.forEach(renderInjectItem); }
       if (msg.log)     { clearLogEntries(); msg.log.forEach(appendLogEntry); updateLogCount(msg.log.length); }
+      // hasFitted only flips once a frame actually happened, so a session that
+      // starts empty still gets framed by the first state that carries pins.
+      if (fitOnNextFullState || !hasFitted) hasFitted = fitToPins() || hasFitted;
+      fitOnNextFullState = false;
     } else if (msg.type === 'pin_add') {
       renderPin(msg.pin);
     } else if (msg.type === 'bulk_add') {
@@ -305,6 +321,18 @@ function setWheelPct(svg, pct) {
   arc.setAttribute('stroke-dasharray', `${dash} ${WHEEL_C}`);
   arc.setAttribute('stroke', integrityColor(pct));
   label.textContent = Math.round(pct) + '%';
+}
+
+/**
+ * Frame the given pins, or every pin when none are given.
+ * Returns false when there is nothing to frame, so callers can say so.
+ */
+function fitToPins(list) {
+  const target = list ?? Object.values(getPins());
+  if (!target.length) return false;
+  getMap().fitBounds(L.latLngBounds(target.map(p => [p.lat, p.lon])),
+                     { padding: [60, 60], maxZoom: 15 });
+  return true;
 }
 
 // ── Right-click context menu ───────────────────────────────────────────────
@@ -620,8 +648,11 @@ async function saveScenario() {
 
 async function loadScenario(name) {
   if (!confirm(`Load scenario "${name}"? Current session will be replaced.`)) return;
+  // Set before the request: the broadcast can land before the response does.
+  fitOnNextFullState = true;
   const r = await apiPost('/api/scenarios/load', { name });
   if (r?.ok) { showToast(`Loaded: ${r.name} (${r.count} pins)`); closeModal('scenario-modal'); }
+  else fitOnNextFullState = false;
 }
 
 async function deleteScenario(name) {
