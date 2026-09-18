@@ -18,7 +18,7 @@ export const SECTORS = [
   { key: 'government', cats: ['Government Buildings'] },
   { key: 'power',      cats: ['Power Plants'] },
   { key: 'emergency',  cats: ['Fire Stations', 'Police Stations'] },
-  { key: 'civilian',   cats: ['Water Systems', 'Transportation Hubs', 'Telecom Infrastructure', 'Universities'] },
+  { key: 'civilian',   cats: ['Water Systems', 'Transportation Hubs', 'Telecom Infrastructure', 'Universities', 'Data Centers'] },
   { key: 'financial',  cats: ['Banks'] },
 ];
 
@@ -49,6 +49,7 @@ export const CATEGORY_ICONS = {
   'Water Systems':          'fa-droplet',
   'Transportation Hubs':    'fa-plane',
   'Telecom Infrastructure': 'fa-tower-cell',
+  'Data Centers':           'fa-database',
   'Universities':           'fa-graduation-cap',
   'Banks':                  'fa-building-columns',
   'Asset':                  'fa-server',
