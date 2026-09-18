@@ -41,9 +41,13 @@ function makePinIcon(pin) {
   const border = `${ops.width} ${ops.style} ${safeColor(ops.color)}`;
   const ico = CATEGORY_ICONS[pin.category] || 'fa-circle-dot';
   const glyph = STATUS_GLYPH[pin.status] || '';
+  // Leaflet makes markers tabbable, but a div of icon fonts announces nothing.
+  const label = `${pin.name}. ${pin.category}. `
+              + `Security ${pin.status}. Operational ${pin.op_status || 'Healthy'}.`;
   return L.divIcon({
     className: '',
-    html: `<div class="pin-icon" style="background:${col};border:${border}">`
+    html: `<div class="pin-icon" role="img" aria-label="${escHtml(label)}" `
+        + `style="background:${col};border:${border}">`
         + `<i class="fa-solid ${escHtml(ico)}" aria-hidden="true"></i>`
         + (glyph ? `<span class="pin-status-glyph" aria-hidden="true">${glyph}</span>` : '')
         + `</div>`,

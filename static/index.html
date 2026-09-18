@@ -167,9 +167,9 @@
   <div id="sitrep-toolbar">
     <button class="btn btn-blue" data-action="openScenarioModal" data-accel="S" title="Ctrl+S">SCENARIO</button>
     <button id="undo-btn" class="btn btn-dim" data-action="undoAction" data-accel="Z" title="Ctrl+Z" disabled>&#8630; UNDO</button>
-    <button class="btn btn-dim"  data-action="toggleLog"    data-accel="L" title="Ctrl+L">LOG</button>
-    <button class="btn btn-dim"  data-action="togglePanel"  title="Toggle side panel">&#9776; PANEL</button>
-    <button class="btn btn-dim"  data-action="openShortcuts" title="Keyboard shortcuts (?)">?</button>
+    <button class="btn btn-dim"  data-action="toggleLog"    data-accel="L" aria-expanded="false" aria-controls="log-panel" title="Ctrl+L">LOG</button>
+    <button class="btn btn-dim"  data-action="togglePanel"  aria-expanded="true" aria-controls="panel" title="Toggle side panel">&#9776; PANEL</button>
+    <button class="btn btn-dim"  data-action="openShortcuts" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">?</button>
     <div class="toolbar-sep"></div>
     <button id="cluster-btn"  class="btn btn-dim" data-action="toggleClusters"     title="Cluster dense pins at low zoom">CLUSTERS</button>
     <button id="zones-btn"    class="btn btn-dim" data-action="toggleSectorZones"  title="Show sector bounding zones">ZONES</button>
@@ -180,7 +180,7 @@
     <button class="btn btn-dim" data-action="exportBriefing"  title="Export SITREP briefing">EXPORT</button>
     <div class="toolbar-sep"></div>
     <button id="metrics-btn" class="btn btn-dim" data-action="toggleMetricsPanel" title="Custom metrics tracker">METRICS ▾</button>
-    <button id="tools-btn" class="btn btn-dim" data-action="toggleRightPanel" title="Toggle tools panel">TOOLS ▸</button>
+    <button id="tools-btn" class="btn btn-dim" data-action="toggleRightPanel" aria-expanded="false" aria-controls="right-panel" title="Toggle tools panel">TOOLS ▸</button>
   </div><!-- /#sitrep-toolbar -->
 
 </div>
@@ -189,8 +189,8 @@
 <div id="metrics-panel">
   <div id="metrics-list"></div>
   <div class="metrics-add-row">
-    <input id="met-name" class="inp" placeholder="Metric name..." style="flex:2;min-width:0"/>
-    <input id="met-val"  class="inp" type="number" min="0" max="100" value="100" placeholder="0–100" style="flex:1;min-width:0;max-width:70px"/>
+    <input id="met-name" class="inp" placeholder="Metric name..." aria-label="Metric name" style="flex:2;min-width:0"/>
+    <input id="met-val"  class="inp" type="number" min="0" max="100" value="100" placeholder="0–100" aria-label="Metric value, 0 to 100" style="flex:1;min-width:0;max-width:70px"/>
     <button class="btn" data-action="addMetric">+ ADD</button>
   </div>
 </div>
@@ -203,14 +203,14 @@
   <div class="panel-section">
     <div class="section-hdr">LOCATION</div>
     <div class="row">
-      <input id="loc-input" class="inp" placeholder="Search location..."/>
+      <input id="loc-input" class="inp" placeholder="Search location..." aria-label="Search for a location"/>
       <button class="btn" data-action="geoSearch">GO</button>
     </div>
   </div>
 
   <div class="panel-section">
     <div class="section-hdr">IR INFRASTRUCTURE</div>
-    <select id="osm-cat" class="inp">
+    <select id="osm-cat" class="inp" aria-label="Infrastructure category to query">
       <optgroup label="── Medical ──────────">
         <option>Hospitals</option>
       </optgroup>
@@ -236,7 +236,7 @@
       </optgroup>
     </select>
     <div class="row" style="margin-top:4px">
-      <input id="osm-radius" class="inp" style="width:60px" type="number" value="15" min="1" max="200"/>
+      <input id="osm-radius" class="inp" style="width:60px" type="number" value="15" min="1" max="200" aria-label="Search radius in miles"/>
       <span class="dim-txt">mi radius</span>
       <button id="query-btn" class="btn" style="margin-left:auto" data-action="osmSearch">QUERY</button>
     </div>
@@ -259,7 +259,7 @@
 
   <div class="panel-section">
     <div class="section-hdr">BULK UPDATE</div>
-    <select id="bulk-cat" class="inp">
+    <select id="bulk-cat" class="inp" aria-label="Category to apply bulk changes to">
       <option value="">— All categories —</option>
     </select>
     <div id="bulk-preview" class="dim-txt" style="margin-top:5px">0 pins affected</div>
@@ -295,7 +295,7 @@
 <div id="right-panel">
   <div class="right-panel-hdr">
     <span>TOOLS</span>
-    <button class="btn btn-dim" style="padding:1px 8px;font-size:11px" data-action="toggleRightPanel">✕</button>
+    <button class="btn btn-dim" style="padding:1px 8px;font-size:11px" data-action="toggleRightPanel" aria-label="Close the tools panel">✕</button>
   </div>
 
   <div class="panel-section" data-section="timer">
@@ -323,9 +323,9 @@
     <div class="section-hdr">FIND ASSET</div>
     <div class="section-body">
       <div class="row">
-        <input id="pin-filter-inp" class="inp" placeholder="Filter by name or category..."
+        <input id="pin-filter-inp" class="inp" placeholder="Filter by name or category..." aria-label="Filter assets by name or category"
                title="Enter zooms the map to whatever still matches"/>
-        <button class="btn btn-dim" style="padding:4px 8px" data-action="clearFilter">&#10005;</button>
+        <button class="btn btn-dim" style="padding:4px 8px" data-action="clearFilter" aria-label="Clear the asset filter">&#10005;</button>
       </div>
       <div id="filter-status" class="dim-txt" style="margin-top:4px;font-size:10px"></div>
     </div>
@@ -373,7 +373,7 @@
     <div class="section-body">
       <ul id="threshold-list"></ul>
       <div class="row" style="gap:4px;margin-top:6px">
-        <input id="thr-name" class="inp" placeholder="Rule name..." style="flex:1;min-width:0"/>
+        <input id="thr-name" class="inp" placeholder="Rule name..." aria-label="Threshold rule name" style="flex:1;min-width:0"/>
       </div>
       <div class="row" style="gap:4px;margin-top:4px">
         <select id="thr-sector" class="inp" style="flex:1">
@@ -409,12 +409,12 @@
 </div>
 
 <!-- ── TOAST ─────────────────────────────────────────── -->
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <!-- ── MODAL: PIN EDIT ───────────────────────────────── -->
 <div id="pin-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box">
-    <div class="modal-hdr">EDIT PIN</div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="pin-modal-hdr">
+    <div class="modal-hdr" id="pin-modal-hdr">EDIT PIN</div>
     <input id="em-pid" type="hidden"/>
     <label class="lbl">Name</label>
     <input id="em-name" class="inp" type="text"/>
@@ -467,8 +467,8 @@
 
 <!-- ── MODAL: BULK PIN ───────────────────────────────── -->
 <div id="bulk-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box">
-    <div class="modal-hdr">BULK PIN</div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="bulk-modal-hdr">
+    <div class="modal-hdr" id="bulk-modal-hdr">BULK PIN</div>
     <div class="dim-txt" id="bulk-count"></div>
     <label class="lbl">Security Status</label>
     <select id="bm-status" class="inp">
@@ -506,7 +506,7 @@
 
 <!-- ── MODAL: NAME PROMPT ────────────────────────────── -->
 <div id="name-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box">
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="nm-hdr">
     <div class="modal-hdr" id="nm-hdr">ADD PIN</div>
     <label class="lbl">Name</label>
     <input id="nm-name" class="inp" type="text" placeholder="Enter name..."/>
@@ -534,7 +534,7 @@
 
 <!-- ── DECISION LOG PANEL ─────────────────────────────── -->
 <div id="log-panel">
-  <div id="log-hdr" data-action="toggleLog">
+  <div id="log-hdr" data-action="toggleLog" role="button" tabindex="0" aria-expanded="false" aria-controls="log-body">
     <span>DECISION LOG</span>
     <div style="display:flex;gap:8px;align-items:center">
       <span id="log-count" class="dim-txt">0 entries</span>
@@ -546,15 +546,15 @@
   <div id="log-body">
     <div id="log-entries"></div>
     <div id="log-add-row">
-      <select id="log-pin-sel" class="inp" style="flex:1;font-size:11px"></select>
-      <input id="log-action-inp" class="inp" placeholder="Action taken..." style="flex:2;font-size:11px"/>
+      <select id="log-pin-sel" class="inp" aria-label="Asset this entry refers to" style="flex:1;font-size:11px"></select>
+      <input id="log-action-inp" class="inp" placeholder="Action taken..." aria-label="Action taken" style="flex:2;font-size:11px"/>
       <button class="btn" style="white-space:nowrap" data-action="addLogEntry">LOG</button>
     </div>
   </div>
 </div>
 
 <!-- ── INJECT ALERT OVERLAY ───────────────────────────── -->
-<div id="inject-alert" style="display:none">
+<div id="inject-alert" role="alert" aria-live="assertive" style="display:none">
   <div id="inject-alert-box">
     <div id="inject-alert-bar"></div>
     <div id="inject-alert-body">
@@ -571,12 +571,12 @@
 
 <!-- ── MODAL: SCENARIO MANAGER ────────────────────────── -->
 <div id="scenario-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box" style="max-width:460px">
-    <div class="modal-hdr">SCENARIO MANAGER</div>
+  <div class="modal-box" style="max-width:460px" role="dialog" aria-modal="true" aria-labelledby="scenario-modal-hdr">
+    <div class="modal-hdr" id="scenario-modal-hdr">SCENARIO MANAGER</div>
 
     <div class="section-hdr">SAVE CURRENT SESSION</div>
     <div class="row" style="margin-top:6px;gap:6px">
-      <input id="scenario-name-inp" class="inp" placeholder="Scenario name..." style="flex:1"/>
+      <input id="scenario-name-inp" class="inp" placeholder="Scenario name..." aria-label="Scenario name" style="flex:1"/>
       <button class="btn" data-action="saveScenario">SAVE</button>
     </div>
 
@@ -593,8 +593,8 @@
 
 <!-- ── MODAL: CREATE INJECT ───────────────────────────── -->
 <div id="create-inject-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box">
-    <div class="modal-hdr">CREATE INJECT</div>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="create-inject-hdr">
+    <div class="modal-hdr" id="create-inject-hdr">CREATE INJECT</div>
     <label class="lbl">Title</label>
     <input id="inj-title" class="inp" placeholder="e.g. SCADA Anomaly Detected"/>
     <label class="lbl">Description (shown to all players)</label>
@@ -654,10 +654,10 @@
 
 <!-- ── MODAL: TIMELINE ─────────────────────────────────── -->
 <div id="timeline-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box timeline-box">
-    <div class="modal-hdr" style="display:flex;justify-content:space-between;align-items:center">
+  <div class="modal-box timeline-box" role="dialog" aria-modal="true" aria-labelledby="timeline-hdr">
+    <div class="modal-hdr" id="timeline-hdr" style="display:flex;justify-content:space-between;align-items:center">
       INCIDENT TIMELINE
-      <button class="btn btn-dim" style="padding:2px 8px;font-size:10px" data-action="closeModal" data-args="[&quot;timeline-modal&quot;]">&#10005;</button>
+      <button class="btn btn-dim" style="padding:2px 8px;font-size:10px" data-action="closeModal" data-args="[&quot;timeline-modal&quot;]" aria-label="Close the timeline">&#10005;</button>
     </div>
     <div class="dim-txt" style="font-size:10px;margin-bottom:8px">
       <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#00ff41;margin-right:4px;vertical-align:middle"></span>Manual
@@ -672,7 +672,7 @@
 
 <!-- ── MODAL: CONFIRM / PROMPT ────────────────────────── -->
 <div id="ask-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box" style="max-width:380px">
+  <div class="modal-box" style="max-width:380px" role="dialog" aria-modal="true" aria-labelledby="ask-hdr">
     <div class="modal-hdr" id="ask-hdr">CONFIRM</div>
     <div id="ask-message" class="ask-message"></div>
     <div id="ask-input-row" style="display:none">
@@ -688,8 +688,8 @@
 
 <!-- ── MODAL: KEYBOARD SHORTCUTS ──────────────────────── -->
 <div id="shortcuts-modal" class="modal-overlay" style="display:none">
-  <div class="modal-box" style="max-width:460px">
-    <div class="modal-hdr">KEYBOARD SHORTCUTS</div>
+  <div class="modal-box" style="max-width:460px" role="dialog" aria-modal="true" aria-labelledby="shortcuts-hdr">
+    <div class="modal-hdr" id="shortcuts-hdr">KEYBOARD SHORTCUTS</div>
     <table class="shortcut-table">
       <tr><td class="sc-key" data-accel="S" data-accel-label>Ctrl+S</td><td>Save scenario</td></tr>
       <tr><td class="sc-key" data-accel="L" data-accel-label>Ctrl+L</td><td>Toggle decision log</td></tr>

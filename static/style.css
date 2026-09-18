@@ -1255,3 +1255,15 @@ select.inp option { background: var(--bg-input); color: var(--fg-text); }
     scroll-behavior: auto !important;
   }
 }
+
+/* ── Focus ── */
+/* Only .inp and the metric name carried any focus styling, so tabbing through
+   the toolbars and modals gave no indication of where you were. */
+:focus-visible {
+  outline: 2px solid var(--fg-bright);
+  outline-offset: 2px;
+}
+.leaflet-marker-icon:focus-visible {
+  outline: 2px solid var(--fg-bright);
+  outline-offset: 3px;
+}

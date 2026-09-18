@@ -78,3 +78,69 @@ def test_legend_keeps_clear_of_the_panels(app_page):
         return ['panel', 'right-panel', 'log-panel'].filter(id => hits(l(), box(id)));
     }""")
     assert overlaps == [], f"with both panels open, key overlaps {overlaps}"
+
+
+def test_modals_are_dialogs_that_name_themselves(app_page):
+    page = app_page
+    page.click('[data-action="openShortcuts"]')
+    page.wait_for_selector("#shortcuts-modal", state="visible")
+
+    box = page.locator("#shortcuts-modal .modal-box")
+    assert box.get_attribute("role") == "dialog"
+    assert box.get_attribute("aria-modal") == "true"
+    labelled_by = box.get_attribute("aria-labelledby")
+    assert page.text_content(f"#{labelled_by}").strip() == "KEYBOARD SHORTCUTS"
+    page.keyboard.press("Escape")
+
+
+def test_tab_stays_inside_an_open_modal(app_page):
+    page = app_page
+    page.click('[data-action="openShortcuts"]')
+    page.wait_for_selector("#shortcuts-modal", state="visible")
+
+    inside = lambda: page.evaluate(
+        "() => !!document.activeElement.closest('#shortcuts-modal')")
+    for _ in range(8):
+        page.keyboard.press("Tab")
+        assert inside(), "Tab escaped into the page behind the modal"
+    page.keyboard.press("Escape")
+
+
+def test_closing_a_modal_gives_focus_back(app_page):
+    page = app_page
+    opener = '[data-action="openShortcuts"]'
+    page.focus(opener)
+    page.keyboard.press("Enter")
+    page.wait_for_selector("#shortcuts-modal", state="visible")
+    assert page.evaluate(
+        "() => !!document.activeElement.closest('#shortcuts-modal')")
+
+    page.keyboard.press("Escape")
+    page.wait_for_selector("#shortcuts-modal", state="hidden")
+    assert page.evaluate(
+        "sel => document.activeElement === document.querySelector(sel)", opener), \
+        "focus was dropped on the body instead of returning to the opener"
+
+
+def test_markers_announce_their_status(app_page, seeded):
+    page = app_page
+    page.wait_for_function(
+        "() => document.querySelectorAll('.leaflet-marker-icon').length >= 5")
+    labels = page.evaluate(
+        "() => [...document.querySelectorAll('.pin-icon')].map(p => p.getAttribute('aria-label'))")
+    assert any("Rosslyn Substation" in (l or "") for l in labels)
+    match = next(l for l in labels if "Rosslyn Substation" in (l or ""))
+    assert "Security Compromised" in match
+    assert "Operational Offline" in match
+
+
+def test_panel_toggles_report_their_state(app_page):
+    page = app_page
+    btn = "#tools-btn"
+    assert page.get_attribute(btn, "aria-expanded") == "false"
+    page.click(btn)
+    page.wait_for_selector("#right-panel.open")
+    assert page.get_attribute(btn, "aria-expanded") == "true"
+    page.click(btn)
+    page.wait_for_timeout(300)
+    assert page.get_attribute(btn, "aria-expanded") == "false"
