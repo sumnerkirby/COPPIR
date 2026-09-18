@@ -88,12 +88,6 @@ function boot() {
   loadCustomMetrics();
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', boot);
-} else {
-  boot();
-}
-
 function initDomHandlers() {
   // Was inline: onkeydown="if(e.key==='Enter')geoSearch()". Inline handlers
   // are given `event`, not `e`, so that threw ReferenceError every time and
@@ -1555,4 +1549,15 @@ async function exportBriefing() {
   const filename = `coppir_sitrep_${stamp()}.html`;
   downloadBlob(html, filename, 'text/html');
   showToast(`Saved ${filename}`);
+}
+
+// ── Start ──────────────────────────────────────────────────────────────────
+// Last in the file on purpose. A module script runs at readyState
+// 'interactive', so this branch is taken during module evaluation -- calling
+// boot() from higher up put every `const` and `let` below it in the temporal
+// dead zone, and anything boot() touched synchronously threw.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
 }
