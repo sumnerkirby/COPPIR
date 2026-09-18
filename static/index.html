@@ -289,105 +289,113 @@
 </div>
 
 <!-- ── RIGHT PANEL ────────────────────────────────────── -->
+<!-- Ordered by how often a section is reached for once an exercise is
+     running, and the standing configuration collapses out of the way. -->
 <div id="right-panel">
   <div class="right-panel-hdr">
     <span>TOOLS</span>
     <button class="btn btn-dim" style="padding:1px 8px;font-size:11px" data-action="toggleRightPanel">✕</button>
   </div>
 
-  <div class="panel-section">
+  <div class="panel-section" data-section="timer">
     <div class="section-hdr">EXERCISE TIMER</div>
-    <div id="timer-display">00:00:00</div>
-    <div class="row" style="gap:5px;margin-top:8px">
-      <button id="timer-btn" class="btn btn-blue" style="flex:1" data-action="toggleTimer">START</button>
-      <button class="btn btn-dim" style="flex:1" data-action="resetTimer">RESET</button>
+    <div class="section-body">
+      <div id="timer-display">00:00:00</div>
+      <div class="row" style="gap:5px;margin-top:8px">
+        <button id="timer-btn" class="btn btn-blue" style="flex:1" data-action="toggleTimer">START</button>
+        <button class="btn btn-dim" style="flex:1" data-action="resetTimer">RESET</button>
+      </div>
     </div>
   </div>
 
-  <div class="panel-section">
-    <div class="section-hdr">LAYER VISIBILITY</div>
-    <div id="cat-toggles">
-      <div class="dim-txt" style="font-size:10px;padding:2px 0">No assets pinned yet.</div>
-    </div>
-  </div>
-
-  <div class="panel-section">
-    <div class="section-hdr">MAP MARKUP</div>
-    <div style="margin-bottom:6px">
-      <button id="map-lock-btn" class="btn btn-dim" style="width:100%" data-action="toggleMapLock" title="Lock map panning and scroll zoom">LOCK MAP</button>
-    </div>
-    <div class="markup-tools">
-      <button id="draw-line-btn"   class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;polyline&quot;, &quot;draw-line-btn&quot;]"   title="Draw line — click points, double-click to finish">LINE</button>
-      <button id="draw-area-btn"   class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;polygon&quot;, &quot;draw-area-btn&quot;]"    title="Draw polygon — click points, double-click to finish">AREA</button>
-      <button id="draw-rect-btn"   class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;rectangle&quot;, &quot;draw-rect-btn&quot;]"  title="Draw rectangle — click and drag">RECT</button>
-      <button id="draw-circle-btn" class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;circle&quot;, &quot;draw-circle-btn&quot;]"   title="Draw circle — click center, drag to set radius">CIRCLE</button>
-    </div>
-    <div class="markup-colors">
-      <span class="markup-swatch swatch-active" data-color="#FF3333" style="background:#FF3333" data-action="setMarkupColor" data-args="[&quot;#FF3333&quot;]"></span>
-      <span class="markup-swatch" data-color="#FFAA00" style="background:#FFAA00" data-action="setMarkupColor" data-args="[&quot;#FFAA00&quot;]"></span>
-      <span class="markup-swatch" data-color="#00FF41" style="background:#00FF41" data-action="setMarkupColor" data-args="[&quot;#00FF41&quot;]"></span>
-      <span class="markup-swatch" data-color="#3399FF" style="background:#3399FF" data-action="setMarkupColor" data-args="[&quot;#3399FF&quot;]"></span>
-      <span class="markup-swatch" data-color="#ffffff" style="background:#ffffff" data-action="setMarkupColor" data-args="[&quot;#ffffff&quot;]"></span>
-      <input type="color" id="markup-color-picker" class="markup-color-inp" value="#FF3333" title="Custom color"/>
-    </div>
-    <div style="display:flex;gap:4px;margin-top:6px">
-      <button id="measure-btn" class="btn btn-dim" style="flex:1" data-action="toggleMeasure" title="Click points to measure distance · Double-click or Esc to finish">MEASURE</button>
-      <button class="btn btn-dim" style="flex:1" data-action="clearAllMarkup">CLEAR ALL</button>
-    </div>
-    <div id="measure-result" class="dim-txt" style="margin-top:5px;font-size:10px;text-align:center;min-height:14px;letter-spacing:0.5px"></div>
-  </div>
-
-  <div class="panel-section">
-    <div class="section-hdr">FIND ASSET</div>
-    <div class="row">
-      <input id="pin-filter-inp" class="inp" placeholder="Filter by name or category..."
-             title="Enter zooms the map to whatever still matches"/>
-      <button class="btn btn-dim" style="padding:4px 8px" data-action="clearFilter">&#10005;</button>
-    </div>
-    <div id="filter-status" class="dim-txt" style="margin-top:4px;font-size:10px"></div>
-  </div>
-
-  <div class="panel-section">
-    <div class="section-hdr">QUICK ADD</div>
-    <div class="dim-txt">Right-click the map to place a pin</div>
-    <div class="dim-txt" style="margin-top:4px"><span data-accel="S" data-accel-label>Ctrl+S</span> Save &nbsp;·&nbsp; <span data-accel="L" data-accel-label>Ctrl+L</span> Log &nbsp;·&nbsp; Esc Close</div>
-  </div>
-
-  <div class="panel-section">
-    <div class="section-hdr">ALERT THRESHOLDS</div>
-    <ul id="threshold-list"></ul>
-    <div class="row" style="gap:4px;margin-top:6px">
-      <input id="thr-name" class="inp" placeholder="Rule name..." style="flex:1;min-width:0"/>
-    </div>
-    <div class="row" style="gap:4px;margin-top:4px">
-      <select id="thr-sector" class="inp" style="flex:1">
-        <option value="all">All sectors</option>
-        <option value="medical">Medical</option>
-        <option value="government">Government</option>
-        <option value="power">Power</option>
-        <option value="emergency">Emergency</option>
-        <option value="civilian">Civilian</option>
-        <option value="financial">Financial</option>
-      </select>
-      <input id="thr-pct" class="inp" type="number" value="50" min="0" max="100" style="width:52px" title="Alert when score drops below this %"/>
-      <span class="dim-txt">%</span>
-    </div>
-    <div class="row" style="gap:4px;margin-top:4px">
-      <select id="thr-sev" class="inp" style="flex:1">
-        <option value="info">Info</option>
-        <option value="warning" selected>Warning</option>
-        <option value="critical">Critical</option>
-      </select>
-      <button class="btn" data-action="addThreshold">+ ADD</button>
-    </div>
-  </div>
-
-  <div class="panel-section">
-    <div class="section-hdr" style="display:flex;justify-content:space-between;align-items:center">
+  <div class="panel-section" data-section="injects">
+    <div class="section-hdr">
       INJECT QUEUE
       <button class="btn btn-blue" style="padding:2px 7px;font-size:10px" data-action="openInjectModal">+ NEW</button>
     </div>
-    <ul id="inject-list"></ul>
+    <div class="section-body">
+      <ul id="inject-list"></ul>
+    </div>
+  </div>
+
+  <div class="panel-section" data-section="find">
+    <div class="section-hdr">FIND ASSET</div>
+    <div class="section-body">
+      <div class="row">
+        <input id="pin-filter-inp" class="inp" placeholder="Filter by name or category..."
+               title="Enter zooms the map to whatever still matches"/>
+        <button class="btn btn-dim" style="padding:4px 8px" data-action="clearFilter">&#10005;</button>
+      </div>
+      <div id="filter-status" class="dim-txt" style="margin-top:4px;font-size:10px"></div>
+    </div>
+  </div>
+
+  <div class="panel-section" data-section="layers">
+    <div class="section-hdr">LAYER VISIBILITY</div>
+    <div class="section-body">
+      <div id="cat-toggles">
+        <div class="dim-txt" style="font-size:10px;padding:2px 0">No assets pinned yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel-section" data-section="markup">
+    <div class="section-hdr">MAP MARKUP</div>
+    <div class="section-body">
+      <div style="margin-bottom:6px">
+        <button id="map-lock-btn" class="btn btn-dim" style="width:100%" data-action="toggleMapLock" title="Lock map panning and scroll zoom">LOCK MAP</button>
+      </div>
+      <div class="markup-tools">
+        <button id="draw-line-btn"   class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;polyline&quot;, &quot;draw-line-btn&quot;]"   title="Draw line — click points, double-click to finish">LINE</button>
+        <button id="draw-area-btn"   class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;polygon&quot;, &quot;draw-area-btn&quot;]"    title="Draw polygon — click points, double-click to finish">AREA</button>
+        <button id="draw-rect-btn"   class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;rectangle&quot;, &quot;draw-rect-btn&quot;]"  title="Draw rectangle — click and drag">RECT</button>
+        <button id="draw-circle-btn" class="btn btn-dim markup-btn" data-action="startDraw" data-args="[&quot;circle&quot;, &quot;draw-circle-btn&quot;]"   title="Draw circle — click center, drag to set radius">CIRCLE</button>
+      </div>
+      <div class="markup-colors">
+        <span class="markup-swatch swatch-active" data-color="#FF3333" style="background:#FF3333" data-action="setMarkupColor" data-args="[&quot;#FF3333&quot;]"></span>
+        <span class="markup-swatch" data-color="#FFAA00" style="background:#FFAA00" data-action="setMarkupColor" data-args="[&quot;#FFAA00&quot;]"></span>
+        <span class="markup-swatch" data-color="#00FF41" style="background:#00FF41" data-action="setMarkupColor" data-args="[&quot;#00FF41&quot;]"></span>
+        <span class="markup-swatch" data-color="#3399FF" style="background:#3399FF" data-action="setMarkupColor" data-args="[&quot;#3399FF&quot;]"></span>
+        <span class="markup-swatch" data-color="#ffffff" style="background:#ffffff" data-action="setMarkupColor" data-args="[&quot;#ffffff&quot;]"></span>
+        <input type="color" id="markup-color-picker" class="markup-color-inp" value="#FF3333" title="Custom color"/>
+      </div>
+      <div style="display:flex;gap:4px;margin-top:6px">
+        <button id="measure-btn" class="btn btn-dim" style="flex:1" data-action="toggleMeasure" title="Click points to measure distance · Double-click or Esc to finish">MEASURE</button>
+        <button class="btn btn-dim" style="flex:1" data-action="clearAllMarkup">CLEAR ALL</button>
+      </div>
+      <div id="measure-result" class="dim-txt" style="margin-top:5px;font-size:10px;text-align:center;min-height:14px;letter-spacing:0.5px"></div>
+    </div>
+  </div>
+
+  <div class="panel-section" data-section="thresholds">
+    <div class="section-hdr">ALERT THRESHOLDS</div>
+    <div class="section-body">
+      <ul id="threshold-list"></ul>
+      <div class="row" style="gap:4px;margin-top:6px">
+        <input id="thr-name" class="inp" placeholder="Rule name..." style="flex:1;min-width:0"/>
+      </div>
+      <div class="row" style="gap:4px;margin-top:4px">
+        <select id="thr-sector" class="inp" style="flex:1">
+          <option value="all">All sectors</option>
+          <option value="medical">Medical</option>
+          <option value="government">Government</option>
+          <option value="power">Power</option>
+          <option value="emergency">Emergency</option>
+          <option value="civilian">Civilian</option>
+          <option value="financial">Financial</option>
+        </select>
+        <input id="thr-pct" class="inp" type="number" value="50" min="0" max="100" style="width:52px" title="Alert when score drops below this %"/>
+        <span class="dim-txt">%</span>
+      </div>
+      <div class="row" style="gap:4px;margin-top:4px">
+        <select id="thr-sev" class="inp" style="flex:1">
+          <option value="info">Info</option>
+          <option value="warning" selected>Warning</option>
+          <option value="critical">Critical</option>
+        </select>
+        <button class="btn" data-action="addThreshold">+ ADD</button>
+      </div>
+    </div>
   </div>
 </div>
 

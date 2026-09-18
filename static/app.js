@@ -88,7 +88,35 @@ function boot() {
   loadCustomMetrics();
 }
 
+// Everything starts open: the panel is where these tools are discovered, and
+// folding them by default hides controls a first-time user has not met yet.
+// Ordering is what keeps the inject queue above the fold; collapsing is the
+// escape valve for operators who want less, and it persists once used.
+const COLLAPSED_BY_DEFAULT = [];
+
+function initCollapsibleSections() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem('coppir_panel_sections') || 'null'); } catch { saved = null; }
+  const collapsed = new Set(saved ?? COLLAPSED_BY_DEFAULT);
+
+  const sections = document.querySelectorAll('#right-panel .panel-section[data-section]');
+  sections.forEach(sec => sec.classList.toggle('collapsed', collapsed.has(sec.dataset.section)));
+
+  document.getElementById('right-panel').addEventListener('click', ev => {
+    const hdr = ev.target.closest('.section-hdr');
+    // The inject queue header carries its own + NEW button.
+    if (!hdr || ev.target.closest('button')) return;
+    const sec = hdr.closest('.panel-section[data-section]');
+    if (!sec) return;
+    sec.classList.toggle('collapsed');
+    const now = [...sections].filter(s => s.classList.contains('collapsed'))
+                             .map(s => s.dataset.section);
+    try { localStorage.setItem('coppir_panel_sections', JSON.stringify(now)); } catch {}
+  });
+}
+
 function initDomHandlers() {
+  initCollapsibleSections();
   // Was inline: onkeydown="if(e.key==='Enter')geoSearch()". Inline handlers
   // are given `event`, not `e`, so that threw ReferenceError every time and
   // Enter never searched -- you had to click GO.

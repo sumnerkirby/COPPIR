@@ -288,6 +288,33 @@ html, body {
   margin-bottom: 6px;
 }
 
+/* Collapsible sections in the tools panel. Its content runs well past the
+   height of the window, so the standing configuration folds away and the
+   things reached for mid-exercise stay in view. */
+#right-panel .section-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 0;
+  padding-bottom: 6px;
+}
+#right-panel .section-hdr::after {
+  content: '\25BE';
+  font-size: 9px;
+  color: var(--fg-dim);
+  transition: transform 0.15s ease;
+}
+#right-panel .section-hdr:hover { color: var(--fg-bright); }
+#right-panel .panel-section.collapsed .section-hdr { padding-bottom: 0; }
+#right-panel .panel-section.collapsed .section-hdr::after { transform: rotate(-90deg); }
+#right-panel .panel-section.collapsed .section-body { display: none; }
+
+/* The header is a flex row, so a button inside it must not stretch. */
+#right-panel .section-hdr > button { flex: 0 0 auto; }
+
 /* ── Shared inputs ── */
 .inp {
   width: 100%;
