@@ -1162,3 +1162,12 @@ select.inp option { background: var(--bg-input); color: var(--fg-text); }
   .wheel-svg     { width: 42px; height: 42px; }
   .wheel-name    { font-size: 8px; letter-spacing: 0.5px; }
 }
+
+/* ── Confirm / prompt dialog ── */
+.ask-message {
+  color: var(--fg-text);
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 4px 0 10px;
+  white-space: pre-line;
+}

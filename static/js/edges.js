@@ -4,6 +4,7 @@
 // return. Clearing an edge when its pin disappears is coordinated in app.js
 // rather than from inside pins.js, which keeps that one-way.
 
+import { askConfirm } from './dialog.js';
 import { getMap } from './map.js';
 import { getPins } from './pins.js';
 
@@ -39,11 +40,14 @@ export function renderEdge(edge) {
     `<div style="font-size:10px">${fromPin.name} <b>→</b> ${toPin.name}${edge.label ? '<br><span style="opacity:.7">' + edge.label + '</span>' : ''}</div>`,
     { sticky: true }
   );
-  line.on('click', e => {
+  line.on('click', async e => {
     L.DomEvent.stopPropagation(e);
-    if (confirm(`Delete connection:\n${fromPin.name} → ${toPin.name}?`)) {
-      fetch(`/api/edges/${edge.id}`, { method: 'DELETE' });
-    }
+    const ok = await askConfirm({
+      title: 'DELETE CONNECTION',
+      message: `${fromPin.name} → ${toPin.name}`,
+      confirmLabel: 'DELETE', danger: true,
+    });
+    if (ok) fetch(`/api/edges/${edge.id}`, { method: 'DELETE' });
   });
 
   edgeLayers[edge.id] = line;

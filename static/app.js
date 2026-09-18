@@ -24,6 +24,7 @@ import {
   convexHull, darkenHex, debounce, escHtml, formatDist, haversineM,
   integrityColor, safeColor,
 } from './js/utils.js';
+import { askConfirm, isAsking, resolveAsk } from './js/dialog.js';
 import { showToast } from './js/toast.js';
 import { apiPost, apiPut } from './js/api.js';
 
@@ -188,7 +189,8 @@ function initKeyboard() {
     if (accel && key === 'z') { e.preventDefault(); undoAction(); }
     if (e.key === '?' && !e.target.matches('input,textarea,select')) openShortcuts();
     if (e.key === 'Escape') {
-      if (cancelActiveDraw()) { /* a part-drawn shape was discarded */ }
+      if (isAsking()) { resolveAsk(false); }
+      else if (cancelActiveDraw()) { /* a part-drawn shape was discarded */ }
       else if (isMeasuring()) { finishMeasure(); }
       else { closeAllModals(); }
     }
@@ -428,6 +430,9 @@ function resolveNameModal(confirmed) {
 }
 document.getElementById('nm-name').addEventListener('keydown', e => {
   if (e.key === 'Enter') resolveNameModal(true);
+});
+document.getElementById('ask-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') resolveAsk(true);
 });
 
 // ── Location search ────────────────────────────────────────────────────────
@@ -690,7 +695,12 @@ async function saveScenario() {
 }
 
 async function loadScenario(name) {
-  if (!confirm(`Load scenario "${name}"? Current session will be replaced.`)) return;
+  const ok = await askConfirm({
+    title: 'LOAD SCENARIO',
+    message: `Load "${name}"?\n\nThe current session will be replaced.`,
+    confirmLabel: 'LOAD',
+  });
+  if (!ok) return;
   // Set before the request: the broadcast can land before the response does.
   fitOnNextFullState = true;
   const r = await apiPost('/api/scenarios/load', { name });
@@ -699,13 +709,24 @@ async function loadScenario(name) {
 }
 
 async function deleteScenario(name) {
-  if (!confirm(`Delete scenario "${name}"?`)) return;
+  const ok = await askConfirm({
+    title: 'DELETE SCENARIO',
+    message: `Delete "${name}"? The saved file is removed.`,
+    confirmLabel: 'DELETE', danger: true,
+  });
+  if (!ok) return;
   await fetch(`/api/scenarios/${encodeURIComponent(name)}`, { method: 'DELETE' });
   await refreshScenarioList();
 }
 
 async function confirmClear() {
-  if (!confirm('Start a new session? All current pins, injects, and log entries will be cleared.')) return;
+  const ok = await askConfirm({
+    title: 'NEW SESSION',
+    message: 'Clear all pins, injects, thresholds and log entries?\n\n'
+           + 'Anything not saved as a scenario is lost.',
+    confirmLabel: 'CLEAR', danger: true,
+  });
+  if (!ok) return;
   await fetch('/api/state/clear', { method: 'POST' });
   closeModal('scenario-modal');
   showToast('New session started');
@@ -730,6 +751,7 @@ function closeAllModals() {
   ['pin-modal', 'bulk-modal', 'name-modal', 'create-inject-modal', 'scenario-modal', 'timeline-modal', 'shortcuts-modal'].forEach(closeModal);
   resolveNameModal(false);
   resolveBulk(false);
+  resolveAsk(false);
   hideCtx();
   dismissInjectAlert();
 }
@@ -772,7 +794,7 @@ const ACTIONS = {
   exportBriefing, exportLog, geoSearch, hideCtx, loadScenario,
   openInjectModal, openScenarioModal, openShortcuts, openTimeline,
   osmSearch, pinAll, promptMetricValue, resetTimer, resolveBulk,
-  resolveNameModal, saveInject, savePinEdit, saveScenario, setBulkColor,
+  resolveAsk, resolveNameModal, saveInject, savePinEdit, saveScenario, setBulkColor,
   setColor, setMarkupColor, setQueryOrigin, startDraw, toggleCategoryLayer,
   toggleClusters, toggleHeatmap, toggleLog, toggleMapLock, toggleMeasure,
   toggleMetricsPanel, toggleOpsHeatmap, togglePanel, toggleRightPanel,
@@ -1019,7 +1041,13 @@ function refreshBulkPreview() {
 async function clearAllPinsConfirm() {
   const count = Object.keys(getPins()).length;
   if (!count) { showToast('No pins to delete'); return; }
-  if (!confirm(`Delete all ${count} pin(s) and topology links? This cannot be undone.`)) return;
+  const ok = await askConfirm({
+    title: 'DELETE ALL PINS',
+    message: `Delete all ${count} pin(s) and every topology link between them?\n\n`
+           + 'This cannot be undone.',
+    confirmLabel: 'DELETE', danger: true,
+  });
+  if (!ok) return;
   await fetch('/api/pins', { method: 'DELETE' });
 }
 
@@ -1029,7 +1057,12 @@ async function applyBulkStatus() {
   const count  = Object.values(getPins()).filter(p => !cat || p.category === cat).length;
   if (!count) { showToast('No matching pins'); return; }
   const label = cat || 'all categories';
-  if (!confirm(`Set ${count} pin(s) in "${label}" → SEC: "${status}"?`)) return;
+  const ok = await askConfirm({
+    title: 'BULK SECURITY STATUS',
+    message: `Set ${count} pin(s) in "${label}" to "${status}"?`,
+    confirmLabel: 'APPLY',
+  });
+  if (!ok) return;
   const r = await apiPost('/api/pins/bulk-status', { category: cat, status });
   if (r?.ok) showToast(`Updated ${r.count} pin(s) → ${status}`);
 }
@@ -1040,7 +1073,12 @@ async function applyBulkOpStatus() {
   const count     = Object.values(getPins()).filter(p => !cat || p.category === cat).length;
   if (!count) { showToast('No matching pins'); return; }
   const label = cat || 'all categories';
-  if (!confirm(`Set ${count} pin(s) in "${label}" → OPS: "${op_status}"?`)) return;
+  const ok = await askConfirm({
+    title: 'BULK OPERATIONAL STATUS',
+    message: `Set ${count} pin(s) in "${label}" to "${op_status}"?`,
+    confirmLabel: 'APPLY',
+  });
+  if (!ok) return;
   const r = await apiPost('/api/pins/bulk-status', { category: cat, op_status });
   if (r?.ok) showToast(`Updated ${r.count} pin(s) → ${op_status}`);
 }
