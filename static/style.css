@@ -44,10 +44,14 @@ html, body {
   height: 78px;
   border-bottom: 1px solid #002200;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
   flex-shrink: 0;
 }
-#sitrep-metrics::-webkit-scrollbar { display: none; }
+/* Matches the toolbar row below. Previously display:none, which meant that
+   when the strip did overflow, the hidden content gave no sign it existed. */
+#sitrep-metrics::-webkit-scrollbar { height: 3px; display: block; }
+#sitrep-metrics::-webkit-scrollbar-track { background: transparent; }
+#sitrep-metrics::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
 /* Row 2 — toolbar */
 #sitrep-toolbar {
@@ -1109,4 +1113,25 @@ select.inp option { background: var(--bg-input); color: var(--fg-text); }
 #inject-alert-footer {
   display: flex; justify-content: space-between; align-items: center;
   border-top: 1px solid var(--border); padding-top: 12px;
+}
+
+/* ── Narrow windows ──────────────────────────────────────────────────────
+   run.py allows the window down to 1100x700, but the strip needs ~1345px at
+   full size, so the last three sector wheels fell off the right-hand edge.
+   Tightening the spacing and shrinking the wheels brings the whole picture
+   back inside 1100. The strip is a glance-at-it summary; scrolling to find
+   half of it defeats the point. */
+@media (max-width: 1360px) {
+  #sitrep-metrics { padding: 0 6px; }
+
+  .sitrep-divider { margin: 12px 6px; }
+
+  .sitrep-chips { gap: 3px; }
+  .sitrep-chip  { padding: 5px 6px; }
+  .chip-count   { font-size: 17px; }
+  .chip-label   { font-size: 7px; letter-spacing: 0; }
+
+  #sitrep-wheels { gap: 6px; padding: 0 4px; }
+  .wheel-svg     { width: 42px; height: 42px; }
+  .wheel-name    { font-size: 8px; letter-spacing: 0.5px; }
 }
