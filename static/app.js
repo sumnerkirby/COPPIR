@@ -28,6 +28,22 @@ import { apiPost, apiPut } from './js/api.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
+// Cmd on macOS, Ctrl everywhere else. The app ships as a .dmg, and only
+// ctrlKey was ever checked, so none of these fired there -- Cmd+S reached the
+// WebView's own save dialog instead.
+const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.platform || navigator.userAgent);
+const ACCEL_LABEL = IS_MAC ? '\u2318' : 'Ctrl+';
+
+/** Relabel the accelerator hints for the platform the app is actually on. */
+function labelAccelerators() {
+  document.querySelectorAll('[data-accel]').forEach(el => {
+    const combo = ACCEL_LABEL + el.dataset.accel;
+    if (el.hasAttribute('data-accel-label')) el.textContent = combo;
+    else el.title = combo;
+  });
+}
+
+
 // 19 matches the r attribute on the SVG circles used for sector and custom metric wheels.
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -139,10 +155,14 @@ function initClock() {
 }
 
 function initKeyboard() {
+  labelAccelerators();
   document.addEventListener('keydown', e => {
-    if (e.ctrlKey && e.key === 's') { e.preventDefault(); openScenarioModal(); }
-    if (e.ctrlKey && e.key === 'l') { e.preventDefault(); toggleLog(); }
-    if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoAction(); }
+    const accel = e.metaKey || e.ctrlKey;
+    // e.key carries the shifted form, so Caps Lock alone used to break these.
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (accel && key === 's') { e.preventDefault(); openScenarioModal(); }
+    if (accel && key === 'l') { e.preventDefault(); toggleLog(); }
+    if (accel && key === 'z') { e.preventDefault(); undoAction(); }
     if (e.key === '?' && !e.target.matches('input,textarea,select')) openShortcuts();
     if (e.key === 'Escape') {
       if (cancelActiveDraw()) { /* a part-drawn shape was discarded */ }

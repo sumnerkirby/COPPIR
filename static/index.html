@@ -165,9 +165,9 @@
 
   <!-- Row 2: toolbar -->
   <div id="sitrep-toolbar">
-    <button class="btn btn-blue" data-action="openScenarioModal" title="Ctrl+S">SCENARIO</button>
-    <button id="undo-btn" class="btn btn-dim" data-action="undoAction" title="Ctrl+Z" disabled>&#8630; UNDO</button>
-    <button class="btn btn-dim"  data-action="toggleLog"    title="Ctrl+L">LOG</button>
+    <button class="btn btn-blue" data-action="openScenarioModal" data-accel="S" title="Ctrl+S">SCENARIO</button>
+    <button id="undo-btn" class="btn btn-dim" data-action="undoAction" data-accel="Z" title="Ctrl+Z" disabled>&#8630; UNDO</button>
+    <button class="btn btn-dim"  data-action="toggleLog"    data-accel="L" title="Ctrl+L">LOG</button>
     <button class="btn btn-dim"  data-action="togglePanel"  title="Toggle side panel">&#9776; PANEL</button>
     <button class="btn btn-dim"  data-action="openShortcuts" title="Keyboard shortcuts (?)">?</button>
     <div class="toolbar-sep"></div>
@@ -350,7 +350,7 @@
   <div class="panel-section">
     <div class="section-hdr">QUICK ADD</div>
     <div class="dim-txt">Right-click the map to place a pin</div>
-    <div class="dim-txt" style="margin-top:4px">Ctrl+S Save &nbsp;·&nbsp; Ctrl+L Log &nbsp;·&nbsp; Esc Close</div>
+    <div class="dim-txt" style="margin-top:4px"><span data-accel="S" data-accel-label>Ctrl+S</span> Save &nbsp;·&nbsp; <span data-accel="L" data-accel-label>Ctrl+L</span> Log &nbsp;·&nbsp; Esc Close</div>
   </div>
 
   <div class="panel-section">
@@ -666,9 +666,9 @@
   <div class="modal-box" style="max-width:460px">
     <div class="modal-hdr">KEYBOARD SHORTCUTS</div>
     <table class="shortcut-table">
-      <tr><td class="sc-key">Ctrl+S</td><td>Save scenario</td></tr>
-      <tr><td class="sc-key">Ctrl+L</td><td>Toggle decision log</td></tr>
-      <tr><td class="sc-key">Ctrl+Z</td><td>Undo last action</td></tr>
+      <tr><td class="sc-key" data-accel="S" data-accel-label>Ctrl+S</td><td>Save scenario</td></tr>
+      <tr><td class="sc-key" data-accel="L" data-accel-label>Ctrl+L</td><td>Toggle decision log</td></tr>
+      <tr><td class="sc-key" data-accel="Z" data-accel-label>Ctrl+Z</td><td>Undo last action</td></tr>
       <tr><td class="sc-key">?</td><td>Show this help</td></tr>
       <tr><td class="sc-key">Esc</td><td>Close modals</td></tr>
       <tr><td class="sc-key">Enter</td><td>Submit location search / confirm name</td></tr>

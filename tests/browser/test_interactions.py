@@ -203,3 +203,22 @@ def test_rejected_pin_edit_reports_and_keeps_the_modal_open(app_page, seeded, ap
     assert api.get("/api/pins").json()[pid]["name"] == before["name"]
 
     page.click('[data-action="closeModal"][data-args*="pin-modal"]')
+
+
+def test_accelerators_fire_on_either_modifier(app_page):
+    """Only ctrlKey was checked, so nothing bound fired on the macOS build."""
+    page = app_page
+    for modifier in ("Control", "Meta"):
+        page.keyboard.press(f"{modifier}+l")
+        page.wait_for_selector("#log-panel.open")
+        page.keyboard.press(f"{modifier}+l")
+        page.wait_for_function(
+            "() => !document.getElementById('log-panel').classList.contains('open')")
+
+
+def test_accelerator_hints_follow_the_platform(app_page):
+    """The hints are relabelled from data-accel rather than hard-coded."""
+    label = app_page.text_content('.sc-key[data-accel="S"]')
+    assert label in ("Ctrl+S", "⌘S")
+    assert app_page.get_attribute('[data-action="toggleLog"][data-accel]', "title") \
+        in ("Ctrl+L", "⌘L")
