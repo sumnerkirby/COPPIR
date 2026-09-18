@@ -120,9 +120,32 @@ document.addEventListener('DOMContentLoaded', () => {
   connectWS();
   initKeyboard();
   initClock();
+  initDomHandlers();
   loadInjects();
   loadCustomMetrics();
 });
+
+function initDomHandlers() {
+  // Was inline: onkeydown="if(e.key==='Enter')geoSearch()". Inline handlers
+  // are given `event`, not `e`, so that threw ReferenceError every time and
+  // Enter never searched -- you had to click GO.
+  document.getElementById('loc-input')
+    .addEventListener('keydown', ev => { if (ev.key === 'Enter') geoSearch(); });
+
+  document.getElementById('bulk-cat')
+    .addEventListener('change', () => refreshBulkPreview());
+  document.getElementById('markup-color-picker')
+    .addEventListener('change', ev => setMarkupColor(ev.target.value));
+  document.getElementById('pin-filter-inp')
+    .addEventListener('input', ev => filterPins(ev.target.value));
+
+  // Metric names are contenteditable and rendered on the fly. blur does not
+  // bubble, so delegate the bubbling equivalent instead.
+  document.addEventListener('focusout', ev => {
+    const el = ev.target.closest('[data-rename-metric]');
+    if (el) renameMetric(el.dataset.renameMetric, el.textContent.trim());
+  });
+}
 
 function initMap() {
   map = L.map('map', { zoomControl: true }).setView([39.5, -98.35], 5);
@@ -627,7 +650,7 @@ function openPinModal(pid) {
       const labelPart = e.label ? ` — ${escHtml(e.label)}` : '';
       return `<div class="link-entry">
         <span style="flex:1;font-size:10px">${escHtml(otherName)}${labelPart}</span>
-        <button class="btn btn-danger" style="padding:1px 5px;font-size:9px" onclick="deletePinLink('${escHtml(e.id)}','${escHtml(pid)}')">✕</button>
+        <button class="btn btn-danger" style="padding:1px 5px;font-size:9px" data-action="deletePinLink" data-args="${escHtml(JSON.stringify([e.id, pid]))}">✕</button>
       </div>`;
     }).join('');
   }
@@ -704,8 +727,8 @@ async function refreshScenarioList() {
     li.innerHTML = `
       <span class="scenario-item-name"><i class="fa-solid fa-file-lines" style="margin-right:6px;color:var(--fg-dim)"></i>${escHtml(name)}</span>
       <div class="scenario-item-actions">
-        <button class="btn" style="padding:2px 8px;font-size:10px" onclick="loadScenario(${JSON.stringify(name)})">LOAD</button>
-        <button class="btn btn-danger" style="padding:2px 7px;font-size:10px" onclick="deleteScenario(${JSON.stringify(name)})">&#10005;</button>
+        <button class="btn" style="padding:2px 8px;font-size:10px" data-action="loadScenario" data-args="${escHtml(JSON.stringify([name]))}">LOAD</button>
+        <button class="btn btn-danger" style="padding:2px 7px;font-size:10px" data-action="deleteScenario" data-args="${escHtml(JSON.stringify([name]))}">&#10005;</button>
       </div>`;
     list.appendChild(li);
   });
@@ -875,9 +898,8 @@ function renderMetrics() {
     const pct  = Math.max(0, Math.min(100, parseFloat(m.value) || 0));
     const col  = safeColor(integrityColor(pct));
     const dash = (pct / 100) * WHEEL_C;
-    const sid  = JSON.stringify(m.id);
     return `<div class="metric-wheel-wrap">
-      <svg class="wheel-svg" viewBox="0 0 50 50" onclick="promptMetricValue(${sid},${Math.round(pct)})" style="cursor:pointer" title="Click to set value">
+      <svg class="wheel-svg" viewBox="0 0 50 50" data-action="promptMetricValue" data-args="${escHtml(JSON.stringify([m.id, Math.round(pct)]))}" style="cursor:pointer" title="Click to set value">
         <circle cx="25" cy="25" r="19" fill="none" stroke="#003300" stroke-width="7"/>
         <circle cx="25" cy="25" r="19" fill="none" stroke="${col}" stroke-width="7"
           stroke-dasharray="${dash} ${WHEEL_C}" transform="rotate(-90 25 25)"
@@ -885,12 +907,12 @@ function renderMetrics() {
         <text x="25" y="30" text-anchor="middle" style="fill:${col};font-family:var(--font);font-size:9px;font-weight:bold">${Math.round(pct)}%</text>
       </svg>
       <div class="metric-wheel-name" contenteditable="true"
-           onblur="renameMetric(${sid},this.textContent.trim())"
+           data-rename-metric="${escHtml(m.id)}"
            spellcheck="false">${escHtml(m.name)}</div>
       <div class="metric-wheel-controls">
-        <button class="btn btn-dim metric-adj" onclick="adjustMetric(${sid},-5)">−</button>
-        <button class="btn btn-dim metric-adj" onclick="adjustMetric(${sid},5)">+</button>
-        <button class="btn btn-danger metric-del" onclick="deleteMetric(${sid})">×</button>
+        <button class="btn btn-dim metric-adj" data-action="adjustMetric" data-args="${escHtml(JSON.stringify([m.id, -5]))}">−</button>
+        <button class="btn btn-dim metric-adj" data-action="adjustMetric" data-args="${escHtml(JSON.stringify([m.id, 5]))}">+</button>
+        <button class="btn btn-danger metric-del" data-action="deleteMetric" data-args="${escHtml(JSON.stringify([m.id]))}">×</button>
       </div>
     </div>`;
   }).join('');
@@ -1028,6 +1050,41 @@ async function apiPut(url, body) {
   } catch { return null; }
 }
 
+
+// ── Declarative event wiring ───────────────────────────────────────────────
+// Elements opt in with data-action, plus data-args when the handler takes
+// parameters (a JSON array). A single delegated listener dispatches them.
+//
+// This replaces inline onclick attributes. Two reasons it is worth the
+// indirection: markup no longer carries executable code, and dynamically
+// inserted elements work without rebinding anything. It also means user data
+// reaches the DOM as an escaped attribute value rather than being spliced
+// into a string of JavaScript.
+const ACTIONS = {
+    addLogEntry, addMetric, addPinLink, addThreshold, adjustMetric,
+  applyBulkOpStatus, applyBulkStatus, clearAllMarkup, clearAllPinsConfirm,
+  clearFilter, clearQueryOrigin, clearSearch, closeModal, confirmClear,
+  ctxAdd, deleteInject, deleteMetric, deletePinDialog, deletePinLink,
+  deleteScenario, deleteThreshold, dismissInjectAlert, escHtml,
+  exportBriefing, exportLog, geoSearch, hideCtx, loadScenario,
+  openInjectModal, openScenarioModal, openShortcuts, openTimeline,
+  osmSearch, pinAll, promptMetricValue, resetTimer, resolveBulk,
+  resolveNameModal, saveInject, savePinEdit, saveScenario, setBulkColor,
+  setColor, setMarkupColor, setQueryOrigin, startDraw, toggleCategoryLayer,
+  toggleClusters, toggleHeatmap, toggleLog, toggleMapLock, toggleMeasure,
+  toggleMetricsPanel, toggleOpsHeatmap, togglePanel, toggleRightPanel,
+  toggleSectorZones, toggleTimer, triggerInject, undoAction
+};
+
+document.addEventListener('click', ev => {
+  const el = ev.target.closest('[data-action]');
+  if (!el) return;
+  const fn = ACTIONS[el.dataset.action];
+  if (!fn) { console.warn('unknown data-action:', el.dataset.action); return; }
+  if (el.dataset.stopPropagation !== undefined) ev.stopPropagation();
+  fn(...(el.dataset.args ? JSON.parse(el.dataset.args) : []));
+});
+
 // ── Color utilities ────────────────────────────────────────────────────────
 function darkenHex(hex, f = 0.55) {
   const h = hex.replace('#', '');
@@ -1073,9 +1130,9 @@ function renderInjectItem(inj) {
     <div class="dim-txt" style="font-size:10px">${escHtml(desc)}${inj.description.length > 90 ? '…' : ''}</div>
     <div class="inject-item-actions">
       ${!inj.triggered_at
-        ? `<button class="btn btn-danger" style="padding:2px 8px;font-size:10px" onclick="triggerInject('${escHtml(inj.id)}')">&#9654; FIRE</button>`
+        ? `<button class="btn btn-danger" style="padding:2px 8px;font-size:10px" data-action="triggerInject" data-args="${escHtml(JSON.stringify([inj.id]))}">&#9654; FIRE</button>`
         : `<span class="dim-txt" style="font-size:10px">&#10003; FIRED ${escHtml(inj.triggered_at.slice(11,19))}</span>`}
-      <button class="btn btn-dim" style="padding:2px 7px;font-size:10px" onclick="deleteInject('${escHtml(inj.id)}')">&#10005;</button>
+      <button class="btn btn-dim" style="padding:2px 7px;font-size:10px" data-action="deleteInject" data-args="${escHtml(JSON.stringify([inj.id]))}">&#10005;</button>
     </div>`;
   list.appendChild(li);
 }
@@ -1406,7 +1463,7 @@ function renderThresholdList() {
       <span style="flex:1;font-size:10px;color:var(--fg-text)">${escHtml(t.name)}</span>
       <span class="dim-txt" style="font-size:9px;margin:0 6px">${escHtml(t.sector)} &lt;${t.below_pct}%</span>
       <span style="width:8px;height:8px;border-radius:50%;background:${safeColor(sevColor)};display:inline-block;margin-right:5px"></span>
-      <button class="btn btn-danger" style="padding:1px 5px;font-size:9px" onclick="deleteThreshold('${escHtml(t.id)}')">✕</button>`;
+      <button class="btn btn-danger" style="padding:1px 5px;font-size:9px" data-action="deleteThreshold" data-args="${escHtml(JSON.stringify([t.id]))}">✕</button>`;
     list.appendChild(li);
   });
 }
@@ -1600,7 +1657,7 @@ const renderCategoryToggles = debounce(function _renderCategoryToggles() {
     const hidden  = hiddenCategories.has(cat);
     const count   = Object.values(pins).filter(p => p.category === cat).length;
     return `<button class="cat-toggle-btn${hidden ? ' cat-hidden' : ''}"
-                    onclick="toggleCategoryLayer(${JSON.stringify(cat)})">
+                    data-action="toggleCategoryLayer" data-args="${escHtml(JSON.stringify([cat]))}">
       <i class="fa-solid ${escHtml(icon)}"></i>
       <span class="cat-name">${escHtml(cat)}</span>
       <span class="cat-count">${count}</span>
