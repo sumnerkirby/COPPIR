@@ -48,26 +48,48 @@ function makePinIcon(pin) {
   });
 }
 
-export function renderPin(pin) {
-  if (pinMarkers[pin.id]) {
-    const old = pinMarkers[pin.id];
-    if (clusterEnabled && clusterGroup) clusterGroup.removeLayer(old);
-    else getMap().removeLayer(old);
-  }
-  pins[pin.id] = pin;
+function tooltipHtml(pin) {
+  return `<div>${escHtml(pin.name)}</div><div style="font-size:10px;opacity:0.8">`
+       + `SEC: ${escHtml(pin.status)} &nbsp;·&nbsp; OPS: ${escHtml(pin.op_status || 'Healthy')}</div>`;
+}
 
-  const icon = makePinIcon(pin);
-  const marker = L.marker([pin.lat, pin.lon], { icon });
-  marker.bindTooltip(
-      `<div>${escHtml(pin.name)}</div><div style="font-size:10px;opacity:0.8">SEC: ${escHtml(pin.status)} &nbsp;·&nbsp; OPS: ${escHtml(pin.op_status || 'Healthy')}</div>`,
-      { permanent: false, direction: 'top', offset: [0, -8] }
-    )
+export function renderPin(pin) {
+  pins[pin.id] = pin;
+  const existing = pinMarkers[pin.id];
+
+  if (existing) {
+    // Reuse the marker. Dropping the layer and building a new one made Leaflet
+    // tear down and re-insert a DOM node per pin on every update, which is
+    // what a bulk status change over several hundred pins was paying for.
+    existing.setIcon(makePinIcon(pin));
+    existing.setLatLng([pin.lat, pin.lon]);
+    existing.setTooltipContent(tooltipHtml(pin));
+    // setIcon rebuilds the icon element, so the visibility styling goes with it.
+    applyPinVisibility(pin.id);
+    return;
+  }
+
+  const marker = L.marker([pin.lat, pin.lon], { icon: makePinIcon(pin) });
+  marker.bindTooltip(tooltipHtml(pin),
+      { permanent: false, direction: 'top', offset: [0, -8] })
     .on('click', () => pinClicked(pin.id));
 
   if (clusterEnabled && clusterGroup) clusterGroup.addLayer(marker);
   else marker.addTo(getMap());
   pinMarkers[pin.id] = marker;
   applyPinVisibility(pin.id);
+}
+
+/**
+ * Bring the rendered set in line with an authoritative snapshot, keeping the
+ * markers that survive it. The alternative -- clear everything, then draw it
+ * all again -- is what full_state and inject_triggered used to do.
+ */
+export function syncPins(snapshot) {
+  for (const pid of Object.keys(pins)) {
+    if (!(pid in snapshot)) removePin(pid);
+  }
+  Object.values(snapshot).forEach(renderPin);
 }
 
 export function removePin(pid) {

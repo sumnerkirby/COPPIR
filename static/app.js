@@ -1,7 +1,8 @@
 import { createMap, getMap, toggleMapLock } from './js/map.js';
 import {
   clearAllPins, clearFilter, filterPins, getPin, getPins, getVisiblePins, removePin,
-  renderPin, renderCategoryToggles, setPinClickHandler, toggleCategoryLayer, toggleClusters,
+  renderPin, renderCategoryToggles, setPinClickHandler, syncPins, toggleCategoryLayer,
+  toggleClusters,
 } from './js/pins.js';
 import {
   clearAllEdges, getEdges, removeEdgesTouching, renderEdge,
@@ -210,9 +211,8 @@ function connectWS() {
   ws.onmessage = e => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'full_state') {
-      clearAllPins();
+      syncPins(msg.pins);
       clearAllEdges();
-      Object.values(msg.pins).forEach(renderPin);
       if (msg.edges)      { msg.edges.forEach(renderEdge); }
       if (msg.thresholds) { thresholds = msg.thresholds; renderThresholdList(); }
       if (msg.injects) { clearInjectList(); msg.injects.forEach(renderInjectItem); }
@@ -246,8 +246,9 @@ function connectWS() {
       document.getElementById(`inj-${msg.iid}`)?.remove();
     } else if (msg.type === 'inject_triggered') {
       renderInjectItem(msg.inject);
-      clearAllPins(); Object.values(msg.pins).forEach(renderPin);
-      if (msg.new_pin) renderPin(msg.new_pin);
+      // msg.pins is the whole set and already contains msg.new_pin, so this
+      // reconciles rather than rebuilding every marker mid-exercise.
+      syncPins(msg.pins);
       appendLogEntry(msg.log_entry);
       updateLogCount(document.querySelectorAll('.log-entry').length);
       showInjectAlert(msg.inject);
