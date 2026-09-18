@@ -85,6 +85,10 @@ function initDomHandlers() {
     .addEventListener('change', ev => setMarkupColor(ev.target.value));
   document.getElementById('pin-filter-inp')
     .addEventListener('input', ev => filterPins(ev.target.value));
+  document.getElementById('inj-spawn-on')
+    .addEventListener('change', ev => {
+      document.getElementById('inj-spawn-fields').style.display = ev.target.checked ? 'block' : 'none';
+    });
 
   // Metric names are contenteditable and rendered on the fly. blur does not
   // bubble, so delegate the bubbling equivalent instead.
@@ -695,7 +699,7 @@ const ACTIONS = {
   setColor, setMarkupColor, setQueryOrigin, startDraw, toggleCategoryLayer,
   toggleClusters, toggleHeatmap, toggleLog, toggleMapLock, toggleMeasure,
   toggleMetricsPanel, toggleOpsHeatmap, togglePanel, toggleRightPanel,
-  toggleSectorZones, toggleTimer, triggerInject, undoAction
+  toggleSectorZones, toggleTimer, triggerInject, undoAction, useMapCentreForInject
 };
 
 document.addEventListener('click', ev => {
@@ -764,7 +768,19 @@ function openInjectModal() {
     o.value = p.id; o.textContent = p.name;
     sel.appendChild(o);
   });
+  document.getElementById('inj-spawn-on').checked = false;
+  document.getElementById('inj-spawn-fields').style.display = 'none';
+  document.getElementById('inj-spawn-name').value = '';
+  document.getElementById('inj-spawn-cat').value = 'Asset';
+  document.getElementById('inj-spawn-status').value = 'Under Investigation';
+  useMapCentreForInject();
   document.getElementById('create-inject-modal').style.display = 'flex';
+}
+
+function useMapCentreForInject() {
+  const c = getMap().getCenter();
+  document.getElementById('inj-spawn-lat').value = c.lat.toFixed(5);
+  document.getElementById('inj-spawn-lon').value = c.lng.toFixed(5);
 }
 
 async function saveInject() {
@@ -772,14 +788,30 @@ async function saveInject() {
   if (!title) { showToast('Title required'); return; }
   const pid    = document.getElementById('inj-target-pin').value || null;
   const status = document.getElementById('inj-target-status').value || null;
-  await apiPost('/api/injects', {
+
+  let newPin = null;
+  if (document.getElementById('inj-spawn-on').checked) {
+    const lat = parseFloat(document.getElementById('inj-spawn-lat').value);
+    const lon = parseFloat(document.getElementById('inj-spawn-lon').value);
+    const spawnName = document.getElementById('inj-spawn-name').value.trim();
+    if (!spawnName) { showToast('Name the asset this inject places'); return; }
+    if (Number.isNaN(lat) || Number.isNaN(lon)) { showToast('Set coordinates for the new asset'); return; }
+    newPin = {
+      name: spawnName, lat, lon,
+      category: document.getElementById('inj-spawn-cat').value,
+      status:   document.getElementById('inj-spawn-status').value,
+    };
+  }
+
+  const r = await apiPost('/api/injects', {
     title,
     description:   document.getElementById('inj-desc').value.trim(),
     severity:      document.getElementById('inj-sev').value,
     target_pid:    pid,
     target_status: status,
-    new_pin: null,
+    new_pin: newPin,
   });
+  if (!r) return;   // apiPost has already surfaced the reason
   closeModal('create-inject-modal');
   showToast('Inject queued');
 }

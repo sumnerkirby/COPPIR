@@ -138,3 +138,42 @@ def test_filtering_dims_non_matching_pins(seeded, app_page):
           .filter(el => parseFloat(getComputedStyle(el).opacity) < 0.5).length
     """)
     assert dimmed == 4, "one of the five seeded pins matches 'Rosslyn'"
+
+
+def test_inject_modal_can_place_an_asset_when_fired(right_panel, api):
+    """inject.new_pin is reachable from the UI.
+
+    The backend and its tests have always supported spawning a pin on trigger,
+    but saveInject hard-coded `new_pin: null`, so nothing short of a hand-made
+    POST could get there.
+    """
+    page = right_panel
+    page.click('button[data-action="openInjectModal"]')
+    page.wait_for_selector("#create-inject-modal", state="visible")
+
+    assert page.locator("#inj-spawn-fields").is_hidden(), "spawn fields start collapsed"
+    page.fill("#inj-title", "Casualty collection point stood up")
+    page.check("#inj-spawn-on")
+    page.wait_for_selector("#inj-spawn-fields", state="visible")
+
+    # Prefilled from the map centre so the common case needs no typing.
+    assert page.input_value("#inj-spawn-lat")
+    assert page.input_value("#inj-spawn-lon")
+
+    page.fill("#inj-spawn-name", "CCP Alpha")
+    page.fill("#inj-spawn-lat", "38.9072")
+    page.fill("#inj-spawn-lon", "-77.0369")
+    page.click('button[data-action="saveInject"]')
+    page.wait_for_selector("#create-inject-modal", state="hidden")
+
+    queued = [i for i in api.get("/api/injects").json()
+              if i["title"] == "Casualty collection point stood up"]
+    assert len(queued) == 1
+    assert queued[0]["new_pin"]["name"] == "CCP Alpha"
+
+    api.post(f"/api/injects/{queued[0]['id']}/trigger").raise_for_status()
+    page.wait_for_function(
+        "async () => (await import('/js/pins.js')).getPins()"
+        " && Object.values((await import('/js/pins.js')).getPins())"
+        ".some(p => p.name === 'CCP Alpha')"
+    )

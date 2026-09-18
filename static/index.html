@@ -608,6 +608,33 @@
       <option>Under Investigation</option>
       <option>Compromised</option>
     </select>
+    <label class="lbl" style="display:flex;align-items:center;gap:6px;margin-top:10px">
+      <input id="inj-spawn-on" type="checkbox" style="width:auto;margin:0"/>
+      Place a new asset when this fires
+    </label>
+    <div id="inj-spawn-fields" style="display:none">
+      <input id="inj-spawn-name" class="inp" placeholder="Asset name..."/>
+      <div class="row" style="gap:4px;margin-top:4px">
+        <select id="inj-spawn-cat" class="inp" style="flex:1">
+          <option>Asset</option>
+          <option>Responder</option>
+          <option>POI</option>
+        </select>
+        <select id="inj-spawn-status" class="inp" style="flex:1">
+          <option>Under Investigation</option>
+          <option>Compromised</option>
+          <option>Contained</option>
+          <option>Monitored</option>
+          <option>Clean</option>
+        </select>
+      </div>
+      <div class="row" style="gap:4px;margin-top:4px">
+        <input id="inj-spawn-lat" class="inp" type="number" step="any" placeholder="lat" style="flex:1;min-width:0"/>
+        <input id="inj-spawn-lon" class="inp" type="number" step="any" placeholder="lon" style="flex:1;min-width:0"/>
+        <button class="btn btn-dim" style="white-space:nowrap" data-action="useMapCentreForInject"
+                title="Fill from the current map centre">CENTRE</button>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-dim" data-action="closeModal" data-args="[&quot;create-inject-modal&quot;]">CANCEL</button>
       <button class="btn btn-blue" data-action="saveInject">QUEUE INJECT</button>
