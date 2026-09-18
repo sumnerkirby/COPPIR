@@ -1,73 +1,17 @@
-'use strict';
-
-// ── Security helpers ───────────────────────────────────────────────────────
-function escHtml(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-function safeColor(c) {
-  return /^#[0-9a-fA-F]{6}$/.test(c) ? c : '#888888';
-}
-function debounce(fn, ms) {
-  let t;
-  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
-}
+import {
+  CATEGORY_ICONS, OPS_COLORS, OP_STATUS_BORDER, SECTORS, SECTOR_ZONE_COLORS,
+  STATUS_COLORS, STATUS_SCORE, WHEEL_C,
+} from './js/constants.js';
+import {
+  convexHull, darkenHex, debounce, escHtml, formatDist, haversineM,
+  integrityColor, safeColor,
+} from './js/utils.js';
+import { showToast } from './js/toast.js';
+import { apiPost, apiPut } from './js/api.js';
 
 // ── Constants ──────────────────────────────────────────────────────────────
-const STATUS_COLORS = {
-  'Compromised':         { circle: '#FF3333', outside: '#AA0000' },
-  'Under Investigation': { circle: '#FFAA00', outside: '#AA6600' },
-  'Contained':           { circle: '#FF6600', outside: '#AA3300' },
-  'Monitored':           { circle: '#3399FF', outside: '#005599' },
-  'Clean':               { circle: '#33CC33', outside: '#007700' },
-};
-const STATUS_SCORE = { Clean: 100, Monitored: 70, Contained: 40, 'Under Investigation': 15, Compromised: 0 };
-const SECTORS = [
-  { key: 'medical',    cats: ['Hospitals'] },
-  { key: 'government', cats: ['Government Buildings'] },
-  { key: 'power',      cats: ['Power Plants'] },
-  { key: 'emergency',  cats: ['Fire Stations', 'Police Stations'] },
-  { key: 'civilian',   cats: ['Water Systems', 'Transportation Hubs', 'Telecom Infrastructure', 'Universities'] },
-  { key: 'financial',  cats: ['Banks'] },
-];
+
 // 19 matches the r attribute on the SVG circles used for sector and custom metric wheels.
-const WHEEL_C = 2 * Math.PI * 19;
-
-const OP_STATUS_BORDER = {
-  'Healthy':  { color: '#00FF41', style: 'solid', width: '3px' },
-  'Degraded': { color: '#FFD700', style: 'solid', width: '3px' },
-  'Critical': { color: '#FF4500', style: 'solid', width: '3px' },
-  'Offline':  { color: '#666666', style: 'solid', width: '3px' },
-};
-
-const SECTOR_ZONE_COLORS = {
-  medical:    '#3399FF',
-  government: '#AA88FF',
-  power:      '#FFDD00',
-  emergency:  '#FF4444',
-  civilian:   '#00CCAA',
-  financial:  '#FFB000',
-};
-
-const CATEGORY_ICONS = {
-  'Hospitals':              'fa-hospital',
-  'Government Buildings':   'fa-landmark',
-  'Power Plants':           'fa-bolt',
-  'Fire Stations':          'fa-fire',
-  'Police Stations':        'fa-shield-halved',
-  'Water Systems':          'fa-droplet',
-  'Transportation Hubs':    'fa-plane',
-  'Telecom Infrastructure': 'fa-tower-cell',
-  'Universities':           'fa-graduation-cap',
-  'Banks':                  'fa-building-columns',
-  'Asset':                  'fa-server',
-  'Responder':              'fa-user-shield',
-  'POI':                    'fa-location-dot',
-};
 
 // ── State ──────────────────────────────────────────────────────────────────
 let map;
@@ -115,7 +59,7 @@ let measureMarkers   = [];
 let _lastMeasureClick = 0; // timestamp used to ignore the second click of a double-click during measurement
 
 // ── Init ───────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => {
+function boot() {
   initMap();
   connectWS();
   initKeyboard();
@@ -123,7 +67,13 @@ document.addEventListener('DOMContentLoaded', () => {
   initDomHandlers();
   loadInjects();
   loadCustomMetrics();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
 
 function initDomHandlers() {
   // Was inline: onkeydown="if(e.key==='Enter')geoSearch()". Inline handlers
@@ -794,14 +744,6 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
 });
 
 // ── Toast ──────────────────────────────────────────────────────────────────
-let _toastTimer;
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
-}
 
 // ── API helpers ────────────────────────────────────────────────────────────
 // ── Map Lock ───────────────────────────────────────────────────────────────
@@ -1016,41 +958,6 @@ function totalMeasureDist() {
   return total;
 }
 
-function formatDist(m) {
-  if (m < 1000) return `${Math.round(m)} m`;
-  return `${(m / 1000).toFixed(2)} km  ·  ${(m / 1609.344).toFixed(2)} mi`;
-}
-
-async function apiPost(url, body) {
-  try {
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({ detail: r.statusText }));
-      throw new Error(err.detail || r.statusText);
-    }
-    return r.json();
-  } catch (e) {
-    showToast(`Error: ${e.message}`);
-    return null;
-  }
-}
-
-async function apiPut(url, body) {
-  try {
-    const r = await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return r.ok ? r.json() : null;
-  } catch { return null; }
-}
-
-
 // ── Declarative event wiring ───────────────────────────────────────────────
 // Elements opt in with data-action, plus data-args when the handler takes
 // parameters (a JSON array). A single delegated listener dispatches them.
@@ -1086,26 +993,6 @@ document.addEventListener('click', ev => {
 });
 
 // ── Color utilities ────────────────────────────────────────────────────────
-function darkenHex(hex, f = 0.55) {
-  const h = hex.replace('#', '');
-  const r = Math.round(parseInt(h.slice(0, 2), 16) * f);
-  const g = Math.round(parseInt(h.slice(2, 4), 16) * f);
-  const b = Math.round(parseInt(h.slice(4, 6), 16) * f);
-  return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
-}
-
-function integrityColor(pct) {
-  pct = Math.max(0, Math.min(100, pct));
-  let r, g;
-  if (pct >= 50) {
-    r = Math.round(255 * (1 - (pct - 50) / 50));
-    g = 200;
-  } else {
-    r = 220;
-    g = Math.round(200 * pct / 50);
-  }
-  return `rgb(${r},${g},0)`;
-}
 
 // ── Inject queue ───────────────────────────────────────────────────────────
 async function loadInjects() {
@@ -1740,12 +1627,6 @@ function toggleHeatmap() {
 }
 
 // ── Operational health map ─────────────────────────────────────────────────
-const OPS_COLORS = {
-  'Healthy':  '#00FF41',
-  'Degraded': '#FFD700',
-  'Critical': '#FF4500',
-  'Offline':  '#888888',
-};
 
 function toggleOpsHeatmap() {
   const btn = document.getElementById('ops-heatmap-btn');
@@ -1830,14 +1711,6 @@ function updateZoneLabelVisibility() {
     el.style.pointerEvents = show ? '' : 'none';
     el.style.transition    = 'opacity 0.25s ease';
   });
-}
-
-function haversineM(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180, Δλ = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function clusterPinsByDistance(pinList, maxMeters) {
@@ -1929,26 +1802,6 @@ function updateSectorZones() {
 
   sectorZoneLayer.addTo(map);
   updateZoneLabelVisibility();
-}
-
-// Andrew's monotone chain convex hull
-function convexHull(pts) {
-  if (pts.length < 3) return pts;
-  const sorted = [...pts].sort((a, b) => a[1] !== b[1] ? a[1] - b[1] : a[0] - b[0]);
-  const cross = (o, a, b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
-  const lower = [];
-  for (const p of sorted) {
-    while (lower.length >= 2 && cross(lower[lower.length-2], lower[lower.length-1], p) <= 0) lower.pop();
-    lower.push(p);
-  }
-  const upper = [];
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const p = sorted[i];
-    while (upper.length >= 2 && cross(upper[upper.length-2], upper[upper.length-1], p) <= 0) upper.pop();
-    upper.push(p);
-  }
-  upper.pop(); lower.pop();
-  return lower.concat(upper);
 }
 
 // ── Export briefing ────────────────────────────────────────────────────────
