@@ -175,6 +175,7 @@
     <button id="zones-btn"    class="btn btn-dim" data-action="toggleSectorZones"  title="Show sector bounding zones">ZONES</button>
     <button id="heatmap-btn"     class="btn btn-dim" data-action="toggleHeatmap"    title="Security status heat map">SEC HEALTH</button>
     <button id="ops-heatmap-btn" class="btn btn-dim" data-action="toggleOpsHeatmap" title="Operational status heat map">OPS HEALTH</button>
+    <button id="legend-btn" class="btn btn-dim" data-action="toggleLegend" aria-expanded="true" aria-controls="map-legend" title="Show the pin status key">LEGEND</button>
     <button class="btn btn-dim" data-action="openTimeline"    title="View incident timeline">TIMELINE</button>
     <button class="btn btn-dim" data-action="exportBriefing"  title="Export SITREP briefing">EXPORT</button>
     <div class="toolbar-sep"></div>
@@ -706,6 +707,17 @@
     </div>
   </div>
 </div>
+
+<!-- ── MAP LEGEND ────────────────────────────────────── -->
+<!-- Built from the same tables the markers are drawn from, so the key cannot
+     drift away from what is on the map. -->
+<aside id="map-legend" aria-label="Pin status key">
+  <div id="legend-hdr">
+    <span>STATUS KEY</span>
+    <button class="btn btn-dim" data-action="toggleLegend" aria-label="Hide the status key">&#10005;</button>
+  </div>
+  <div id="legend-body"></div>
+</aside>
 
 <script src="vendor/leaflet/leaflet.js"></script>
 <script src="vendor/leaflet.markercluster/leaflet.markercluster.js"></script>

@@ -18,7 +18,7 @@ import {
 } from './js/maptools.js';
 import {
   CATEGORY_ICONS, OPS_COLORS, OP_STATUS_BORDER, SECTORS, SECTOR_ZONE_COLORS,
-  STATUS_COLORS, STATUS_SCORE, WHEEL_C,
+  STATUS_COLORS, STATUS_GLYPH, STATUS_SCORE, WHEEL_C,
 } from './js/constants.js';
 import {
   convexHull, darkenHex, debounce, escHtml, formatDist, haversineM,
@@ -85,6 +85,7 @@ function boot() {
   initClock();
   setPinClickHandler(openPinModal);
   initDomHandlers();
+  initLegend();
   loadInjects();
   loadCustomMetrics();
 }
@@ -378,6 +379,52 @@ function fitToPins(list) {
   getMap().fitBounds(L.latLngBounds(target.map(p => [p.lat, p.lon])),
                      { padding: [60, 60], maxZoom: 15 });
   return true;
+}
+
+// ── Map legend ─────────────────────────────────────────────────────────────
+// Generated from the same tables makePinIcon draws from. Writing it out in
+// index.html would have put the status colours in a third place, and the key
+// on the map is the one thing that must not drift from the map.
+function renderLegend() {
+  const security = Object.entries(STATUS_COLORS).map(([status, c]) => `
+    <div class="legend-row">
+      <span class="legend-swatch" style="background:${safeColor(c.circle)}">${STATUS_GLYPH[status] || ''}</span>
+      <span>${escHtml(status)}</span>
+    </div>`).join('');
+
+  const operational = Object.entries(OP_STATUS_BORDER).map(([status, b]) => `
+    <div class="legend-row">
+      <span class="legend-swatch legend-ring"
+            style="border:${b.width} ${b.style} ${safeColor(b.color)}"></span>
+      <span>${escHtml(status)}</span>
+    </div>`).join('');
+
+  document.getElementById('legend-body').innerHTML = `
+    <div class="legend-group">
+      <div class="legend-group-hdr">SECURITY &mdash; FILL</div>${security}
+    </div>
+    <div class="legend-group">
+      <div class="legend-group-hdr">OPERATIONAL &mdash; RING</div>${operational}
+    </div>`;
+}
+
+function initLegend() {
+  renderLegend();
+  let shown = true;
+  try { shown = localStorage.getItem('coppir_legend') !== 'hidden'; } catch {}
+  setLegendVisible(shown);
+}
+
+function setLegendVisible(shown) {
+  document.getElementById('map-legend').hidden = !shown;
+  const btn = document.getElementById('legend-btn');
+  btn?.classList.toggle('btn-active', shown);
+  btn?.setAttribute('aria-expanded', String(shown));
+  try { localStorage.setItem('coppir_legend', shown ? 'shown' : 'hidden'); } catch {}
+}
+
+function toggleLegend() {
+  setLegendVisible(document.getElementById('map-legend').hidden);
 }
 
 // ── Right-click context menu ───────────────────────────────────────────────
@@ -798,7 +845,8 @@ const ACTIONS = {
   setColor, setMarkupColor, setQueryOrigin, startDraw, toggleCategoryLayer,
   toggleClusters, toggleHeatmap, toggleLog, toggleMapLock, toggleMeasure,
   toggleMetricsPanel, toggleOpsHeatmap, togglePanel, toggleRightPanel,
-  toggleSectorZones, toggleTimer, triggerInject, undoAction, useMapCentreForInject
+  toggleLegend, toggleSectorZones, toggleTimer, triggerInject, undoAction,
+  useMapCentreForInject
 };
 
 document.addEventListener('click', ev => {

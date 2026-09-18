@@ -24,11 +24,25 @@ export const SECTORS = [
 
 export const WHEEL_C = 2 * Math.PI * 19;
 
+// Border style carries operational status alongside the colour. Every entry
+// used to say 'solid', so the ring was colour and nothing else.
 export const OP_STATUS_BORDER = {
-  'Healthy':  { color: '#00FF41', style: 'solid', width: '3px' },
-  'Degraded': { color: '#FFD700', style: 'solid', width: '3px' },
-  'Critical': { color: '#FF4500', style: 'solid', width: '3px' },
-  'Offline':  { color: '#666666', style: 'solid', width: '3px' },
+  'Healthy':  { color: '#00FF41', style: 'solid',  width: '3px' },
+  'Degraded': { color: '#FFD700', style: 'dashed', width: '3px' },
+  'Critical': { color: '#FF4500', style: 'double', width: '4px' },
+  'Offline':  { color: '#666666', style: 'dotted', width: '3px' },
+};
+
+// A second cue for security status. Compromised, Contained and Under
+// Investigation are red, orange and amber -- close enough that colour alone
+// does not separate them for a red-green colour-blind reader, which is a poor
+// property for the thing the whole picture is meant to communicate.
+export const STATUS_GLYPH = {
+  'Compromised':         '\u2715',   // ✕
+  'Under Investigation': '?',
+  'Contained':           '\u25AA',   // ▪
+  'Monitored':           '\u25E6',   // ◦
+  'Clean':               '\u2713',   // ✓
 };
 
 export const SECTOR_ZONE_COLORS = {
