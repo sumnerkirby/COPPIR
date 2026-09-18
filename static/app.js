@@ -1,4 +1,11 @@
 import { createMap, getMap, toggleMapLock } from './js/map.js';
+import {
+  clearAllPins, clearFilter, filterPins, getPin, getPins, removePin, renderPin,
+  renderCategoryToggles, setPinClickHandler, toggleCategoryLayer, toggleClusters,
+} from './js/pins.js';
+import {
+  clearAllEdges, getEdges, removeEdgesTouching, renderEdge,
+} from './js/edges.js';
 import { resetTimer, toggleTimer } from './js/timer.js';
 import {
   addMetric, adjustMetric, deleteMetric, loadCustomMetrics, promptMetricValue,
@@ -24,19 +31,10 @@ import { apiPost, apiPut } from './js/api.js';
 // 19 matches the r attribute on the SVG circles used for sector and custom metric wheels.
 
 // ── State ──────────────────────────────────────────────────────────────────
-let pins       = {};
-let pinMarkers = {};
-let edges      = {};
-let edgeLayers = {};
-let edgesVisible    = true;
-let clusterEnabled  = false;
-let clusterGroup    = null;
 let sectorZonesVisible  = false;
 let sectorZoneLayer     = null;
 let zoneLabelMarkers    = [];
 let undoStack        = null;
-let filterQuery      = '';
-let hiddenCategories = new Set();
 let heatLayer        = null;
 let opsHeatLayer     = null;
 let queryOrigin      = null;
@@ -62,6 +60,7 @@ function boot() {
   connectWS();
   initKeyboard();
   initClock();
+  setPinClickHandler(openPinModal);
   initDomHandlers();
   loadInjects();
   loadCustomMetrics();
@@ -189,13 +188,15 @@ function connectWS() {
     } else if (msg.type === 'pin_update') {
       renderPin(msg.pin);
       // re-render any edges touching this pin
-      Object.values(edges).forEach(ed => {
+      Object.values(getEdges()).forEach(ed => {
         if (ed.from_pid === msg.pin.id || ed.to_pid === msg.pin.id) renderEdge(ed);
       });
     } else if (msg.type === 'pin_delete') {
+      // The server drops these too, but only broadcasts pin_delete,
+      // so the page has to clear them itself.
       removePin(msg.pid);
+      removeEdgesTouching(msg.pid);
     } else if (msg.type === 'edge_add') {
-      edges[msg.edge.id] = msg.edge;
       renderEdge(msg.edge);
     } else if (msg.type === 'edge_delete') {
       removeEdge(msg.eid);
@@ -216,7 +217,7 @@ function connectWS() {
     } else if (msg.type === 'bulk_update') {
       msg.pins.forEach(p => {
         renderPin(p);
-        Object.values(edges).forEach(ed => {
+        Object.values(getEdges()).forEach(ed => {
           if (ed.from_pid === p.id || ed.to_pid === p.id) renderEdge(ed);
         });
       });
@@ -245,70 +246,13 @@ function connectWS() {
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────
-function renderPin(pin) {
-  if (pinMarkers[pin.id]) {
-    const old = pinMarkers[pin.id];
-    if (clusterEnabled && clusterGroup) clusterGroup.removeLayer(old);
-    else getMap().removeLayer(old);
-  }
-  pins[pin.id] = pin;
 
-  const icon = makePinIcon(pin);
-  const marker = L.marker([pin.lat, pin.lon], { icon });
-  marker.bindTooltip(
-      `<div>${escHtml(pin.name)}</div><div style="font-size:10px;opacity:0.8">SEC: ${escHtml(pin.status)} &nbsp;·&nbsp; OPS: ${escHtml(pin.op_status || 'Healthy')}</div>`,
-      { permanent: false, direction: 'top', offset: [0, -8] }
-    )
-    .on('click', () => openPinModal(pin.id));
-
-  if (clusterEnabled && clusterGroup) clusterGroup.addLayer(marker);
-  else marker.addTo(getMap());
-  pinMarkers[pin.id] = marker;
-  applyPinVisibility(pin.id);
-}
-
-function makePinIcon(pin) {
-  const col = safeColor(pin.pin_color || STATUS_COLORS[pin.status]?.circle || '#33CC33');
-  const ops = OP_STATUS_BORDER[pin.op_status] || OP_STATUS_BORDER['Healthy'];
-  const border = `${ops.width} ${ops.style} ${safeColor(ops.color)}`;
-  const ico = CATEGORY_ICONS[pin.category] || 'fa-circle-dot';
-  return L.divIcon({
-    className: '',
-    html: `<div class="pin-icon" style="background:${col};border:${border}"><i class="fa-solid ${escHtml(ico)}"></i></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-  });
-}
-
-function removePin(pid) {
-  if (pinMarkers[pid]) {
-    if (clusterEnabled && clusterGroup) clusterGroup.removeLayer(pinMarkers[pid]);
-    else getMap().removeLayer(pinMarkers[pid]);
-    delete pinMarkers[pid];
-  }
-  delete pins[pid];
-  // remove dangling edges
-  Object.keys(edges).forEach(eid => {
-    if (edges[eid].from_pid === pid || edges[eid].to_pid === pid) removeEdge(eid);
-  });
-  refreshBulkCategories();
-}
-
-function clearAllPins() {
-  Object.values(pinMarkers).forEach(m => {
-    try { getMap().removeLayer(m); } catch {}
-    try { if (clusterGroup) clusterGroup.removeLayer(m); } catch {}
-  });
-  if (clusterGroup) clusterGroup.clearLayers();
-  pinMarkers = {};
-  pins = {};
-}
 
 // ── SITREP ─────────────────────────────────────────────────────────────────
 // Debounced so that bulk imports (50+ pins arriving in rapid succession) do not
 // trigger 50 full sitrep recalculations. One pass runs 80ms after the last update.
 const updateSitrep = debounce(function _updateSitrep() {
-  const all = Object.values(pins);
+  const all = Object.values(getPins());
   const cnt = { Compromised: 0, 'Under Investigation': 0, Contained: 0, Monitored: 0, Clean: 0 };
   all.forEach(p => { if (cnt[p.status] !== undefined) cnt[p.status]++; });
 
@@ -519,7 +463,7 @@ function setBulkColor(hex) {
 
 // ── Pin edit modal ─────────────────────────────────────────────────────────
 function openPinModal(pid) {
-  const p = pins[pid];
+  const p = getPins()[pid];
   document.getElementById('em-pid').value       = pid;
   document.getElementById('em-name').value      = p.name;
   document.getElementById('em-cat').value       = p.category;
@@ -551,7 +495,7 @@ function openPinModal(pid) {
   // populate link target dropdown
   const linkSel = document.getElementById('em-link-target');
   linkSel.innerHTML = '<option value="">— Select asset to link —</option>';
-  Object.values(pins)
+  Object.values(getPins())
     .filter(pp => pp.id !== pid)
     .sort((a, b) => a.name.localeCompare(b.name))
     .forEach(pp => {
@@ -562,13 +506,13 @@ function openPinModal(pid) {
 
   // show existing connections
   const linksEl = document.getElementById('em-links');
-  const myEdges = Object.values(edges).filter(e => e.from_pid === pid || e.to_pid === pid);
+  const myEdges = Object.values(getEdges()).filter(e => e.from_pid === pid || e.to_pid === pid);
   if (!myEdges.length) {
     linksEl.innerHTML = '<div class="dim-txt" style="font-size:10px;padding:2px 0">No connections.</div>';
   } else {
     linksEl.innerHTML = myEdges.map(e => {
       const otherPid  = e.from_pid === pid ? e.to_pid : e.from_pid;
-      const otherName = pins[otherPid]?.name || 'Unknown';
+      const otherName = getPins()[otherPid]?.name || 'Unknown';
       const labelPart = e.label ? ` — ${escHtml(e.label)}` : '';
       return `<div class="link-entry">
         <span style="flex:1;font-size:10px">${escHtml(otherName)}${labelPart}</span>
@@ -584,7 +528,7 @@ async function addPinLink() {
   const pid       = document.getElementById('em-pid').value;
   const targetPid = document.getElementById('em-link-target').value;
   if (!targetPid) { showToast('Select an asset to link to'); return; }
-  const exists = Object.values(edges).some(e =>
+  const exists = Object.values(getEdges()).some(e =>
     (e.from_pid === pid && e.to_pid === targetPid) ||
     (e.from_pid === targetPid && e.to_pid === pid)
   );
@@ -600,7 +544,7 @@ async function deletePinLink(eid, pid) {
 
 async function savePinEdit() {
   const pid  = document.getElementById('em-pid').value;
-  const prev = { ...pins[pid] };
+  const prev = { ...getPins()[pid] };
   await apiPut(`/api/pins/${pid}`, {
     name:      document.getElementById('em-name').value.trim(),
     status:    document.getElementById('em-status').value,
@@ -614,7 +558,7 @@ async function savePinEdit() {
 
 async function deletePinDialog() {
   const pid      = document.getElementById('em-pid').value;
-  const snapshot = { ...pins[pid] };
+  const snapshot = { ...getPins()[pid] };
   closeModal('pin-modal');
   await fetch(`/api/pins/${pid}`, { method: 'DELETE' });
   pushUndo({ type: 'pin_delete', pin: snapshot });
@@ -815,7 +759,7 @@ function openInjectModal() {
   document.getElementById('inj-target-status').value = '';
   const sel = document.getElementById('inj-target-pin');
   sel.innerHTML = '<option value="">— None —</option>';
-  Object.values(pins).sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+  Object.values(getPins()).sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
     const o = document.createElement('option');
     o.value = p.id; o.textContent = p.name;
     sel.appendChild(o);
@@ -923,7 +867,7 @@ function updateLogCount(n) {
 function refreshLogPinSelect() {
   const sel = document.getElementById('log-pin-sel');
   sel.innerHTML = '<option value="">— No specific asset —</option>';
-  Object.values(pins).sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
+  Object.values(getPins()).sort((a,b) => a.name.localeCompare(b.name)).forEach(p => {
     const o = document.createElement('option');
     o.value = p.id; o.textContent = p.name;
     sel.appendChild(o);
@@ -934,7 +878,7 @@ async function addLogEntry() {
   const action = document.getElementById('log-action-inp').value.trim();
   if (!action) return;
   const pid  = document.getElementById('log-pin-sel').value || null;
-  const name = pid ? (pins[pid]?.name || null) : null;
+  const name = pid ? (getPins()[pid]?.name || null) : null;
   await apiPost('/api/log', { action, asset_name: name, asset_pid: pid, notes: '' });
   document.getElementById('log-action-inp').value = '';
 }
@@ -944,7 +888,7 @@ function refreshBulkCategories() {
   const sel = document.getElementById('bulk-cat');
   if (!sel) return;
   const current = sel.value;
-  const cats = [...new Set(Object.values(pins).map(p => p.category))].sort();
+  const cats = [...new Set(Object.values(getPins()).map(p => p.category))].sort();
   sel.innerHTML = '<option value="">— All categories —</option>';
   cats.forEach(c => {
     const o = document.createElement('option');
@@ -957,14 +901,14 @@ function refreshBulkCategories() {
 
 function refreshBulkPreview() {
   const cat = document.getElementById('bulk-cat')?.value || '';
-  const count = Object.values(pins).filter(p => !cat || p.category === cat).length;
+  const count = Object.values(getPins()).filter(p => !cat || p.category === cat).length;
   const catLabel = cat || 'all categories';
   document.getElementById('bulk-preview').textContent =
     `${count} pin${count !== 1 ? 's' : ''} in ${catLabel}`;
 }
 
 async function clearAllPinsConfirm() {
-  const count = Object.keys(pins).length;
+  const count = Object.keys(getPins()).length;
   if (!count) { showToast('No pins to delete'); return; }
   if (!confirm(`Delete all ${count} pin(s) and topology links? This cannot be undone.`)) return;
   await fetch('/api/pins', { method: 'DELETE' });
@@ -973,7 +917,7 @@ async function clearAllPinsConfirm() {
 async function applyBulkStatus() {
   const cat    = document.getElementById('bulk-cat').value || null;
   const status = document.getElementById('bulk-status-sel').value;
-  const count  = Object.values(pins).filter(p => !cat || p.category === cat).length;
+  const count  = Object.values(getPins()).filter(p => !cat || p.category === cat).length;
   if (!count) { showToast('No matching pins'); return; }
   const label = cat || 'all categories';
   if (!confirm(`Set ${count} pin(s) in "${label}" → SEC: "${status}"?`)) return;
@@ -984,7 +928,7 @@ async function applyBulkStatus() {
 async function applyBulkOpStatus() {
   const cat       = document.getElementById('bulk-cat').value || null;
   const op_status = document.getElementById('bulk-op-sel').value;
-  const count     = Object.values(pins).filter(p => !cat || p.category === cat).length;
+  const count     = Object.values(getPins()).filter(p => !cat || p.category === cat).length;
   if (!count) { showToast('No matching pins'); return; }
   const label = cat || 'all categories';
   if (!confirm(`Set ${count} pin(s) in "${label}" → OPS: "${op_status}"?`)) return;
@@ -1010,42 +954,7 @@ function exportLog() {
 }
 
 // ── Network topology ───────────────────────────────────────────────────────
-function renderEdge(edge) {
-  if (edgeLayers[edge.id]) { getMap().removeLayer(edgeLayers[edge.id]); }
-  edges[edge.id] = edge;
-  const fromPin = pins[edge.from_pid];
-  const toPin   = pins[edge.to_pid];
-  if (!fromPin || !toPin) return;
 
-  const line = L.polyline([[fromPin.lat, fromPin.lon], [toPin.lat, toPin.lon]], {
-    color: '#00ff41', weight: 1.5, opacity: edgesVisible ? 0.7 : 0,
-    dashArray: '6 4', interactive: edgesVisible,
-  }).addTo(getMap());
-
-  line.bindTooltip(
-    `<div style="font-size:10px">${fromPin.name} <b>→</b> ${toPin.name}${edge.label ? '<br><span style="opacity:.7">' + edge.label + '</span>' : ''}</div>`,
-    { sticky: true }
-  );
-  line.on('click', e => {
-    L.DomEvent.stopPropagation(e);
-    if (confirm(`Delete connection:\n${fromPin.name} → ${toPin.name}?`)) {
-      fetch(`/api/edges/${edge.id}`, { method: 'DELETE' });
-    }
-  });
-
-  edgeLayers[edge.id] = line;
-}
-
-function removeEdge(eid) {
-  if (edgeLayers[eid]) { getMap().removeLayer(edgeLayers[eid]); delete edgeLayers[eid]; }
-  delete edges[eid];
-}
-
-function clearAllEdges() {
-  Object.keys(edgeLayers).forEach(eid => { getMap().removeLayer(edgeLayers[eid]); });
-  edgeLayers = {};
-  edges = {};
-}
 
 // ── Incident timeline ──────────────────────────────────────────────────────
 function openTimeline() {
@@ -1145,7 +1054,7 @@ async function deleteThreshold(tid) {
 
 function evaluateThresholds() {
   clearThresholdBadges();
-  const all = Object.values(pins);
+  const all = Object.values(getPins());
 
   thresholds.forEach(thr => {
     let relevant;
@@ -1221,69 +1130,10 @@ async function undoAction() {
 }
 
 // ── Pin visibility (category hide + search filter combined) ────────────────
-function applyPinVisibility(pid) {
-  const marker = pinMarkers[pid];
-  const pin    = pins[pid];
-  if (!marker || !pin) return;
-  const catHidden  = hiddenCategories.has(pin.category);
-  const filterMiss = !!filterQuery
-    && !pin.name.toLowerCase().includes(filterQuery)
-    && !pin.category.toLowerCase().includes(filterQuery);
-  const opacity = catHidden ? 0 : filterMiss ? 0.1 : 1;
-  marker.setOpacity(opacity);
-  const el = marker.getElement?.();
-  if (el) el.style.pointerEvents = (catHidden || filterMiss) ? 'none' : '';
-}
 
-function filterPins(query) {
-  filterQuery = query.toLowerCase().trim();
-  let matched = 0;
-  const total = Object.keys(pins).length;
-  Object.values(pins).forEach(pin => {
-    const visible = !filterQuery
-      || pin.name.toLowerCase().includes(filterQuery)
-      || pin.category.toLowerCase().includes(filterQuery);
-    if (visible && !hiddenCategories.has(pin.category)) matched++;
-    applyPinVisibility(pin.id);
-  });
-  const statusEl = document.getElementById('filter-status');
-  statusEl.textContent = filterQuery
-    ? `${matched} of ${total} pin${total !== 1 ? 's' : ''} match` : '';
-}
 
 // ── Category layer toggles ─────────────────────────────────────────────────
-function toggleCategoryLayer(cat) {
-  if (hiddenCategories.has(cat)) hiddenCategories.delete(cat);
-  else hiddenCategories.add(cat);
-  Object.values(pins).filter(p => p.category === cat).forEach(p => applyPinVisibility(p.id));
-  renderCategoryToggles();
-}
 
-const renderCategoryToggles = debounce(function _renderCategoryToggles() {
-  const container = document.getElementById('cat-toggles');
-  if (!container) return;
-  const cats = [...new Set(Object.values(pins).map(p => p.category))].sort();
-  if (!cats.length) {
-    container.innerHTML = '<div class="dim-txt" style="font-size:10px;padding:2px 0">No assets pinned yet.</div>';
-    return;
-  }
-  container.innerHTML = cats.map(cat => {
-    const icon    = CATEGORY_ICONS[cat] || 'fa-circle-dot';
-    const hidden  = hiddenCategories.has(cat);
-    const count   = Object.values(pins).filter(p => p.category === cat).length;
-    return `<button class="cat-toggle-btn${hidden ? ' cat-hidden' : ''}"
-                    data-action="toggleCategoryLayer" data-args="${escHtml(JSON.stringify([cat]))}">
-      <i class="fa-solid ${escHtml(icon)}"></i>
-      <span class="cat-name">${escHtml(cat)}</span>
-      <span class="cat-count">${count}</span>
-    </button>`;
-  }).join('');
-}, 80);
-
-function clearFilter() {
-  document.getElementById('pin-filter-inp').value = '';
-  filterPins('');
-}
 
 // ── Shortcuts modal ────────────────────────────────────────────────────────
 function openShortcuts() {
@@ -1328,7 +1178,7 @@ function toggleHeatmap() {
     btn?.classList.remove('btn-active');
     return;
   }
-  const all = Object.values(pins);
+  const all = Object.values(getPins());
   if (!all.length) { showToast('No pins to visualize'); return; }
 
   if (!getMap().getPane('healthPane')) {
@@ -1364,7 +1214,7 @@ function toggleOpsHeatmap() {
     btn?.classList.remove('btn-active');
     return;
   }
-  const all = Object.values(pins);
+  const all = Object.values(getPins());
   if (!all.length) { showToast('No pins to visualize'); return; }
 
   if (!getMap().getPane('opsPane')) {
@@ -1390,32 +1240,7 @@ function toggleOpsHeatmap() {
 }
 
 // ── Cluster layer ──────────────────────────────────────────────────────────
-function toggleClusters() {
-  clusterEnabled = !clusterEnabled;
-  document.getElementById('cluster-btn')?.classList.toggle('btn-active', clusterEnabled);
 
-  if (clusterEnabled) {
-    if (!clusterGroup) {
-      clusterGroup = L.markerClusterGroup({
-        showCoverageOnHover: false,
-        maxClusterRadius: 55,
-        iconCreateFunction: c => L.divIcon({
-          className: '',
-          html: `<div class="cluster-icon">${c.getChildCount()}</div>`,
-          iconSize: [36, 36], iconAnchor: [18, 18],
-        }),
-      });
-      getMap().addLayer(clusterGroup);
-    }
-    Object.values(pinMarkers).forEach(m => { getMap().removeLayer(m); clusterGroup.addLayer(m); });
-  } else {
-    if (clusterGroup) {
-      Object.values(pinMarkers).forEach(m => { clusterGroup.removeLayer(m); m.addTo(getMap()); });
-      getMap().removeLayer(clusterGroup);
-      clusterGroup = null;
-    }
-  }
-}
 
 // ── Sector bounding zones ──────────────────────────────────────────────────
 function toggleSectorZones() {
@@ -1459,7 +1284,7 @@ function updateSectorZones() {
   if (sectorZoneLayer) { getMap().removeLayer(sectorZoneLayer); sectorZoneLayer = null; }
   sectorZoneLayer = L.layerGroup();
   zoneLabelMarkers = [];
-  const all = Object.values(pins);
+  const all = Object.values(getPins());
   const MAX_M = 1609; // 1 mile
 
   SECTORS.forEach(s => {
@@ -1534,7 +1359,7 @@ function updateSectorZones() {
 
 // ── Export briefing ────────────────────────────────────────────────────────
 async function exportBriefing() {
-  const all = Object.values(pins);
+  const all = Object.values(getPins());
   const cnt = { Compromised: 0, 'Under Investigation': 0, Contained: 0, Monitored: 0, Clean: 0 };
   all.forEach(p => { if (cnt[p.status] !== undefined) cnt[p.status]++; });
   const ops = { Healthy: 0, Degraded: 0, Critical: 0, Offline: 0 };
@@ -1592,7 +1417,7 @@ async function exportBriefing() {
   }
 </style></head><body>
 <h1>COPPIR &mdash; SITUATION REPORT</h1>
-<p class="ts">Generated: ${now.toISOString().replace('T',' ').slice(0,19)} UTC &nbsp;|&nbsp; ${all.length} asset(s) tracked &nbsp;|&nbsp; ${Object.keys(edges).length} network link(s)</p>
+<p class="ts">Generated: ${now.toISOString().replace('T',' ').slice(0,19)} UTC &nbsp;|&nbsp; ${all.length} asset(s) tracked &nbsp;|&nbsp; ${Object.keys(getEdges()).length} network link(s)</p>
 <h2>SECURITY STATUS</h2>
 <table><tr><th>COMPROMISED</th><th>UNDER INVESTIGATION</th><th>CONTAINED</th><th>MONITORED</th><th>CLEAN</th></tr>
 <tr>
